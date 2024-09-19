@@ -573,12 +573,12 @@ function updateActiveTabsData(_info){
  * return (in promise) the current active tab info
  */
 function getActiveTab(){
-   
-    return browser.tabs.query({ active:true, currentWindow: true})
-    .then(function(_info){
-        return _info[0];
+    return new Promise((resolve) => {
+        chrome.tabs.query({ active:true, currentWindow: true}, function(tabs){
+            resolve(tabs[0]);
+        });
     });
-}
+ }
 
 /**
  * @param {object} _data 
@@ -605,7 +605,7 @@ function countInvolvedRules(_tabData, _cb){
 
     // wrapped in a timeout to reduce useless spam
     countInvolvedRules.intCounter = setTimeout(function(){
-        browser.storage.local.get('rules').then(function(_data){
+        chrome.storage.local.get('rules', function(_data){
 
             if (!_data.rules) return;
 

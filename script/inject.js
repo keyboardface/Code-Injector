@@ -112,27 +112,33 @@
         }
     }
 
-    // handle extension messages
-    function handleOnMessage(_data, _sender, _sendResponse){
-        
-        // immediately inject the list of rules without the "On page load" option enabled
-        insertRules(_data.onCommit);
-    
-        // if the page isn't already loaded
-        // wait for the page load to inject the list of rules with the "On page load" option enabled
-        if (document.readyState === 'complete'){
-            insertRules(_data.onLoad);
-            _sendResponse({success: true});
-        }
-        else{
-            window.addEventListener('load', function(){
-                insertRules(_data.onLoad);
-                _sendResponse({success: true});
-            });
-        }
+    function ensureDocumentReady() {
+        return new Promise((resolve) => {
+            if (document.readyState === 'complete') {
+                resolve();
+            } else {
+                window.addEventListener('load', resolve);
+            }
+        });
+    }
 
-        // Return true to indicate that the response will be sent asynchronously
-        return true;
+    async function handleOnMessage(_data, _sender, _callback) {
+        try {
+            // Immediately inject the onCommit rules
+            insertRules(_data.onCommit);
+            
+            // Wait for document ready before injecting onLoad rules
+            await ensureDocumentReady();
+            insertRules(_data.onLoad);
+            
+            if (typeof _callback === 'function') {
+                return _callback(true);
+            }
+            return true;
+        } catch (error) {
+            console.error('[Code-Injector] Injection error:', error);
+            return false;
+        }
     }
 
     // messaging handler

@@ -1,4 +1,3 @@
-
 /** 
  * get the requested template 
  * 
@@ -389,12 +388,29 @@ async function injectRules(_injectionObject) {
         throw new Error('Unknown tab info.');
     }
 
-    await chrome.scripting.executeScript({
-        target: {tabId: _injectionObject.info.tabId, frameIds: [_injectionObject.info.frameId]},
-        files: ['/script/inject.js']
-    });
+    // Add retry logic
+    const maxRetries = 3;
+    let retryCount = 0;
 
-    return chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {frameId: _injectionObject.info.frameId});
+    while (retryCount < maxRetries) {
+        try {
+            await chrome.scripting.executeScript({
+                target: {tabId: _injectionObject.info.tabId, frameIds: [_injectionObject.info.frameId]},
+                files: ['/script/inject.js']
+            });
+
+            return await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
+                frameId: _injectionObject.info.frameId
+            });
+        } catch (error) {
+            retryCount++;
+            if (retryCount === maxRetries) {
+                throw error;
+            }
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
 }
 
 /**

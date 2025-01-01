@@ -90,25 +90,31 @@
     }
 
     // Main loop to inject the selected rules by type
-    function insertRules(_rules){
-
+    function insertRules(_rules) {
+        console.log('[CI Debug] Starting rule insertion:', _rules);
+        
         var rule = _rules.shift();
-        if (rule === undefined) return;
-
-        switch(rule.type){
-
+        if (rule === undefined) {
+            console.log('[CI Debug] No more rules to insert');
+            return;
+        }
+    
+        console.log('[CI Debug] Inserting rule:', rule);
+        switch(rule.type) {
             case 'js': 
+                console.log('[CI Debug] Injecting JS');
                 injectJS(rule, insertRules.bind(null, _rules));
                 break;
-
+    
             case 'css': 
+                console.log('[CI Debug] Injecting CSS');
                 injectCSS(rule, insertRules.bind(null, _rules));
                 break;
-
+    
             case 'html': 
+                console.log('[CI Debug] Injecting HTML');
                 injectHTML(rule, insertRules.bind(null, _rules));
                 break;
-
         }
     }
 
@@ -123,20 +129,29 @@
     }
 
     async function handleOnMessage(_data, _sender, _callback) {
+        console.log('[CI Debug] Message received in content script:', _data);
         try {
-            // Immediately inject the onCommit rules
-            insertRules(_data.onCommit);
-            
-            // Wait for document ready before injecting onLoad rules
+            console.log('[CI Debug] Checking document ready state:', document.readyState);
             await ensureDocumentReady();
-            insertRules(_data.onLoad);
-            
+            console.log('[CI Debug] Document ready');
+    
+            if (_data.onCommit && _data.onCommit.length) {
+                console.log('[CI Debug] Injecting onCommit rules:', _data.onCommit);
+                insertRules(_data.onCommit);
+            }
+    
+            if (_data.onLoad && _data.onLoad.length) {
+                console.log('[CI Debug] Injecting onLoad rules:', _data.onLoad);
+                insertRules(_data.onLoad);
+            }
+    
+            console.log('[CI Debug] Injection complete');
             if (typeof _callback === 'function') {
                 return _callback(true);
             }
             return true;
         } catch (error) {
-            console.error('[Code-Injector] Injection error:', error);
+            console.error('[CI Debug] Content script injection error:', error);
             return false;
         }
     }

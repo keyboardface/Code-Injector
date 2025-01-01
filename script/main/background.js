@@ -405,16 +405,19 @@ function countInvolvedRules(_tabData, _cb){
 /**
  * @param {array} _rules 
  */
-function splitRulesByInjectionType(_injectionObject){
+function splitRulesByInjectionType(_injectionObject) {
+    if (!_injectionObject.rules || _injectionObject.rules.length === 0) {
+        return _injectionObject;
+    }
 
     var splittedRules = { onLoad: [], onCommit: [] };
 
-    each(_injectionObject.rules, function(){
-        splittedRules[this.onLoad ? 'onLoad':'onCommit'].push(this);
+    each(_injectionObject.rules, function() {
+        splittedRules[this.onLoad ? 'onLoad' : 'onCommit'].push(this);
     });
 
     _injectionObject.rules = splittedRules;
-    
+
     return _injectionObject;
 }
 

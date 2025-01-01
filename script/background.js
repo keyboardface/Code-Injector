@@ -380,34 +380,40 @@ function serializeRules(_rules){
  */
 // Updated injection function for Manifest V3
 async function injectRules(_injectionObject) {
-    if (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0) {
-        throw new Error('No rules to be injected');
+    console.log('[CI Debug] Starting injection process:', _injectionObject);
+    
+    if (!_injectionObject.rules || (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0)) {
+        console.log('[CI Debug] Skipping injection - no rules for this frame');
+        return Promise.resolve();
     }
 
     if (!_injectionObject.info) {
+        console.log('[CI Debug] Missing tab info');
         throw new Error('Unknown tab info.');
     }
 
-    // Add retry logic
     const maxRetries = 3;
     let retryCount = 0;
 
     while (retryCount < maxRetries) {
         try {
+            console.log('[CI Debug] Executing inject.js script, attempt:', retryCount + 1);
             await chrome.scripting.executeScript({
                 target: {tabId: _injectionObject.info.tabId, frameIds: [_injectionObject.info.frameId]},
                 files: ['/script/inject.js']
             });
 
+            console.log('[CI Debug] Sending rules to content script');
             return await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
                 frameId: _injectionObject.info.frameId
             });
         } catch (error) {
             retryCount++;
+            console.error('[CI Debug] Injection attempt failed:', error);
             if (retryCount === maxRetries) {
                 throw error;
             }
-            // Wait before retrying
+            console.log('[CI Debug] Retrying in 100ms...');
             await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
@@ -417,17 +423,25 @@ async function injectRules(_injectionObject) {
  * @param {info} _info 
  */
 async function handleWebNavigationOnCommitted(_info) {
+    console.log('[CI Debug] Navigation committed:', _info);
     updateActiveTabsData(_info);
 
     try {
+        console.log('[CI Debug] Getting involved rules...');
         const involvedRules = await getInvolvedRules(_info, rules);
+        console.log('[CI Debug] Involved rules:', involvedRules);
+
+        console.log('[CI Debug] Splitting rules by injection type...');
         const splitRules = splitRulesByInjectionType(involvedRules);
+        console.log('[CI Debug] Split rules:', splitRules);
+
+        console.log('[CI Debug] Injecting rules...');
         await injectRules(splitRules);
+        console.log('[CI Debug] Injection complete');
     } catch (error) {
-        console.error('Injection error:', error);
+        console.error('[CI Debug] Injection error:', error);
     }
 }
-
 /**  
  * @param {info} _info 
  */
@@ -829,3 +843,4 @@ chrome.runtime.onMessage.addListener(handleMessage);
 
 // start ->
 initialize();
+

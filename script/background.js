@@ -392,29 +392,30 @@ async function injectRules(_injectionObject) {
         throw new Error('Unknown tab info.');
     }
 
+    // Content script is already registered in manifest.json, no need to inject it again
+    // Just send the message to the existing content script with retry logic
     const maxRetries = 3;
     let retryCount = 0;
 
     while (retryCount < maxRetries) {
         try {
-            console.log('[CI Debug] Executing inject.js script, attempt:', retryCount + 1);
-            await chrome.scripting.executeScript({
-                target: {tabId: _injectionObject.info.tabId, frameIds: [_injectionObject.info.frameId]},
-                files: ['/script/inject.js']
-            });
-
-            console.log('[CI Debug] Sending rules to content script');
+            console.log('[CI Debug] Sending rules to content script, attempt:', retryCount + 1);
+            // Small delay to ensure content script listener is ready
+            if (retryCount === 0) {
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            
             return await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
                 frameId: _injectionObject.info.frameId
             });
         } catch (error) {
             retryCount++;
-            console.error('[CI Debug] Injection attempt failed:', error);
+            console.error('[CI Debug] Message send attempt failed:', error);
             if (retryCount === maxRetries) {
                 throw error;
             }
-            console.log('[CI Debug] Retrying in 100ms...');
-            await new Promise(resolve => setTimeout(resolve, 100));
+            console.log('[CI Debug] Retrying in 50ms...');
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
     }
 }

@@ -68,7 +68,7 @@
     }
 
     // inject an HTML block of code 
-    function injectHTML(_rule, _cb){
+    async function injectHTML(_rule, _cb){
 
         // it's a remote file if ".path" is defined 
         // !! cannot request remote HTML files
@@ -77,6 +77,23 @@
             _cb();
         }
         else{
+            // Ensure document.body exists before injecting HTML
+            if (!document.body) {
+                console.log('[CI Debug] Waiting for document.body to exist for HTML injection');
+                await new Promise((resolve) => {
+                    if (document.body) {
+                        resolve();
+                    } else {
+                        const observer = new MutationObserver(() => {
+                            if (document.body) {
+                                observer.disconnect();
+                                resolve();
+                            }
+                        });
+                        observer.observe(document.documentElement, { childList: true });
+                    }
+                });
+            }
 
             var parser = new DOMParser();
             var doc = parser.parseFromString(_rule.code, "text/html");
@@ -120,10 +137,12 @@
 
     function ensureDocumentReady() {
         return new Promise((resolve) => {
-            if (document.readyState === 'complete') {
+            // Resolve immediately if document is already interactive or complete
+            if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 resolve();
             } else {
-                window.addEventListener('load', resolve);
+                // Use DOMContentLoaded for faster response (fires before 'load')
+                window.addEventListener('DOMContentLoaded', resolve, { once: true });
             }
         });
     }
@@ -131,18 +150,18 @@
     async function handleOnMessage(_data, _sender, _callback) {
         console.log('[CI Debug] Message received in content script:', _data);
         try {
-            console.log('[CI Debug] Checking document ready state:', document.readyState);
-            await ensureDocumentReady();
-            console.log('[CI Debug] Document ready');
-    
+            // Inject onCommit rules IMMEDIATELY (don't wait for document ready)
             if (_data.onCommit && _data.onCommit.length) {
-                console.log('[CI Debug] Injecting onCommit rules:', _data.onCommit);
-                insertRules(_data.onCommit);
+                console.log('[CI Debug] Injecting onCommit rules immediately:', _data.onCommit);
+                insertRules([..._data.onCommit]); // Create a copy to prevent mutation
             }
     
+            // Wait for document ready before injecting onLoad rules
             if (_data.onLoad && _data.onLoad.length) {
-                console.log('[CI Debug] Injecting onLoad rules:', _data.onLoad);
-                insertRules(_data.onLoad);
+                console.log('[CI Debug] Waiting for document ready state:', document.readyState);
+                await ensureDocumentReady();
+                console.log('[CI Debug] Document ready, injecting onLoad rules:', _data.onLoad);
+                insertRules([..._data.onLoad]); // Create a copy to prevent mutation
             }
     
             console.log('[CI Debug] Injection complete');

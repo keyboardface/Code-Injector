@@ -380,43 +380,26 @@ function serializeRules(_rules){
  */
 // Updated injection function for Manifest V3
 async function injectRules(_injectionObject) {
-    console.log('[CI Debug] Starting injection process:', _injectionObject);
-    
-    if (!_injectionObject.rules || (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0)) {
-        console.log('[CI Debug] Skipping injection - no rules for this frame');
-        return Promise.resolve();
+    // Early exit - no rules to inject
+    if (!_injectionObject.rules || 
+        (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0)) {
+        return;
     }
 
     if (!_injectionObject.info) {
-        console.log('[CI Debug] Missing tab info');
         throw new Error('Unknown tab info.');
     }
 
-    // Content script is already registered in manifest.json, no need to inject it again
-    // Just send the message to the existing content script with retry logic
-    const maxRetries = 3;
-    let retryCount = 0;
-
-    while (retryCount < maxRetries) {
-        try {
-            console.log('[CI Debug] Sending rules to content script, attempt:', retryCount + 1);
-            // Small delay to ensure content script listener is ready
-            if (retryCount === 0) {
-                await new Promise(resolve => setTimeout(resolve, 10));
-            }
-            
-            return await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
-                frameId: _injectionObject.info.frameId
-            });
-        } catch (error) {
-            retryCount++;
-            console.error('[CI Debug] Message send attempt failed:', error);
-            if (retryCount === maxRetries) {
-                throw error;
-            }
-            console.log('[CI Debug] Retrying in 50ms...');
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
+    // Content script is already registered in manifest.json
+    // Send message without blocking retries - use fire-and-forget pattern
+    try {
+        await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
+            frameId: _injectionObject.info.frameId
+        });
+    } catch (error) {
+        // Content script may not be ready yet in some edge cases - this is non-fatal
+        // The content script will handle rules on next navigation if needed
+        console.warn('[Code-Injector] Could not send rules to frame:', error.message);
     }
 }
 
@@ -424,23 +407,48 @@ async function injectRules(_injectionObject) {
  * @param {info} _info 
  */
 async function handleWebNavigationOnCommitted(_info) {
-    console.log('[CI Debug] Navigation committed:', _info);
+    // CRITICAL: Early exit for non-HTTP(S) URLs (chrome://, about:, etc.)
+    if (!_info.url || (!_info.url.startsWith('http://') && !_info.url.startsWith('https://'))) {
+        return;
+    }
+
+    // CRITICAL: Early exit if no rules are configured
+    if (!rules || rules.length === 0) {
+        // Only update tab data for main frame to track the URL
+        if (_info.frameId === 0) {
+            updateActiveTabsData(_info);
+        }
+        return;
+    }
+
+    // Check if any rules could possibly apply to subframes
+    // If all rules are topFrameOnly, skip subframe processing entirely
+    const isMainFrame = _info.frameId === 0;
+    if (!isMainFrame) {
+        const hasSubframeRules = rules.some(rule => !rule.topFrameOnly);
+        if (!hasSubframeRules) {
+            return; // All rules are main-frame only, skip subframes
+        }
+    }
+
+    // Update tab data (for badge counter)
     updateActiveTabsData(_info);
 
     try {
-        console.log('[CI Debug] Getting involved rules...');
         const involvedRules = await getInvolvedRules(_info, rules);
-        console.log('[CI Debug] Involved rules:', involvedRules);
+        
+        // Early exit if no rules matched this URL
+        if (!involvedRules.rules || involvedRules.rules.length === 0) {
+            return;
+        }
 
-        console.log('[CI Debug] Splitting rules by injection type...');
         const splitRules = splitRulesByInjectionType(involvedRules);
-        console.log('[CI Debug] Split rules:', splitRules);
-
-        console.log('[CI Debug] Injecting rules...');
         await injectRules(splitRules);
-        console.log('[CI Debug] Injection complete');
     } catch (error) {
-        console.error('[CI Debug] Injection error:', error);
+        // Only log actual errors, not expected "no rules" scenarios
+        if (error && error.message !== 'No rules to be injected') {
+            console.error('[Code-Injector] Injection error:', error);
+        }
     }
 }
 /**  
@@ -839,7 +847,13 @@ async function initialize() {
 
 chrome.storage.onChanged.addListener(handleStorageChanged);
 chrome.tabs.onActivated.addListener(handleActivated);
-chrome.webNavigation.onCommitted.addListener(handleWebNavigationOnCommitted);
+// CRITICAL FIX: Filter webNavigation to only HTTP/HTTPS URLs at the API level
+// This prevents the listener from firing on chrome://, about:, extension pages, etc.
+chrome.webNavigation.onCommitted.addListener(handleWebNavigationOnCommitted, {
+    url: [
+        { schemes: ['http', 'https'] }
+    ]
+});
 chrome.runtime.onMessage.addListener(handleMessage);
 
 // start ->

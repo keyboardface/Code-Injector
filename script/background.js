@@ -455,6 +455,8 @@ function handleMessage(message, sender, sendResponse) {
         case 'get-injection-rules':
             (async function() {
                 try {
+                    if (initializePromise) await initializePromise;
+
                     if (!rules || rules.length === 0) {
                         sendResponse({ onLoad: [], onCommit: [] });
                         return;
@@ -823,6 +825,7 @@ function readFile(_path, _cb){
 /**
  *  Initialization
  */
+var initializePromise = null;
 async function initialize() {
     const data = await chrome.storage.local.get(null);
     if (data.parsedRules) {
@@ -846,5 +849,5 @@ chrome.webNavigation.onCommitted.addListener(handleWebNavigationOnCommitted, {
 chrome.runtime.onMessage.addListener(handleMessage);
 
 // start ->
-initialize();
+initializePromise = initialize();
 

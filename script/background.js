@@ -280,7 +280,7 @@ var downloadText = (function(){
 var rules = []; 
 
 // settings
-var settings = {};
+var settings = { showcounter: true };
 
 // the currently active tabs data
 var activeTabsData = {};
@@ -530,6 +530,7 @@ function setBadgeCounter(_tabData) {
         text = '';
     }
 
+    chrome.action.setBadgeBackgroundColor({ color: '#4688F1' });
     chrome.action.setBadgeText({ text: text });
 }
 
@@ -621,6 +622,20 @@ function handleStorageChanged(_changes, _areaName) {
 
     if (_changes.settings && _changes.settings.newValue) {
         settings = _changes.settings.newValue;
+
+        getActiveTab().then(function(_tab) {
+            if (!_tab) return;
+            var tabData = activeTabsData[_tab.id];
+            if (tabData) {
+                setBadgeCounter(tabData);
+            } else {
+                updateActiveTabsData({
+                    parentFrameId: -1,
+                    tabId: _tab.id,
+                    url: _tab.url,
+                });
+            }
+        });
     }
 }
 
@@ -645,6 +660,8 @@ function countInvolvedRules(_tabData, _cb){
 
             each(_data.rules, function(){
                 var rule = this;
+
+                if (!rule.enabled) return;
 
                 if (new RegExp(rule.selector).test(_tabData.topURL)) {
                     _tabData.top++;

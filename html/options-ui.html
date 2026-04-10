@@ -7,7 +7,6 @@
         <meta name="author" content="L.Sabatelli">
         <link rel="stylesheet" href="../style/material-icons.css">
         <link rel="stylesheet" href="../style/options-ui.min.css">
-        <script src="../script/browser-polyfill.min.js"></script>
         <script src="../script/options-ui.js"></script>
     </head>
 	<body class="unselectable">
@@ -103,10 +102,18 @@
                 <tr class="opt-counter">
                     <td>
                         Show counter:
-                        <small class="description">A little badget over the addon icon which <br>show how many rules has been injected <br>into the current page.</small>
+                        <small class="description">A little badge over the addon icon which <br>shows how many rules are active <br>on the current page.</small>
                     </td>
                     <td>
-                        <label class="cbk"><input type="checkbox" data-name="cb-show-counter" name="showcounter"></label>
+                        <ul>
+                            <li>
+                                <label class="cbk"><input type="checkbox" data-name="cb-show-counter" name="showcounter"></label>
+                            </li>
+                            <li>
+                                <button class="btn btn-primary" data-name="btn-save-settings" title="Save settings">Save</button>
+                                <div class="save-info success"><span class="material-icons">&#xE876;</span>Saved</div>
+                            </li>
+                        </ul>
                     </td>
                 </tr>
 

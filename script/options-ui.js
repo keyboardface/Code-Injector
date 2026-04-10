@@ -418,21 +418,18 @@ function animateInfoOpacity(_li){
  */
 function loadSettings(){
     chrome.storage.local.get().then(function(_data){
-        if (_data.settings){
-            // apply defaults
-            var settings = Object.assign({
-                nightmode: false,
-                showcounter: false,
-                size: {
-                    width:  500,
-                    height: 500
-                }
-            }, _data.settings);
+        var settings = Object.assign({
+            nightmode: false,
+            showcounter: true,
+            size: {
+                width:  500,
+                height: 500
+            }
+        }, _data.settings);
 
-            el.cbShowcounter.checked = settings.showcounter,
-            el.txtSizeW.value = settings.size.width;
-            el.txtSizeH.value = settings.size.height;
-        }
+        el.cbShowcounter.checked = settings.showcounter;
+        el.txtSizeW.value = settings.size.width;
+        el.txtSizeH.value = settings.size.height;
     });
 }
 
@@ -505,6 +502,7 @@ function updateImportModal(){
  * @param {function} _callback - callback
  */
 function getGitHubRuleInfo(_link){
+    return new Promise(function(_ok, _ko){
 
     /*
     {
@@ -524,9 +522,10 @@ function getGitHubRuleInfo(_link){
     */
 
     // clear the previous defined timeout
-// check if the _link is a valid github rule repository after 
-        // a given delay to avoid a requests spam
-        getGitHubRuleInfo.checkTimeout = setTimeout(function(){
+    // check if the _link is a valid github rule repository after
+    // a given delay to avoid a requests spam
+    clearTimeout(getGitHubRuleInfo.checkTimeout);
+    getGitHubRuleInfo.checkTimeout = setTimeout(function(){
             
             // get the hostname of the given _link 
             var link = parseURL(_link);
@@ -753,6 +752,15 @@ window.addEventListener('load', function(_e){
 
         // the event is handled by checking the "data-name" attribute of the target element 
         switch(target.dataset.name){
+            // save settings
+            case 'btn-save-settings':
+                updateSettings();
+                var li = document.querySelector('.opt-counter');
+                var info = li.querySelector('.save-info.success');
+                info.style.cssText = 'transition: 0s; opacity: 1;';
+                setTimeout(function(){ info.style.cssText = 'transition: 5s; opacity: 0;'; }, 1500);
+                break;
+
             // remove the rules list
             case 'btn-clear-rules': 
                 if (target.dataset.confirm === 'true'){

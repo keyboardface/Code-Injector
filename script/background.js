@@ -390,16 +390,22 @@ async function injectRules(_injectionObject) {
         throw new Error('Unknown tab info.');
     }
 
-    // Content script is already registered in manifest.json
-    // Send message without blocking retries - use fire-and-forget pattern
-    try {
-        await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
-            frameId: _injectionObject.info.frameId
-        });
-    } catch (error) {
-        // Content script may not be ready yet in some edge cases - this is non-fatal
-        // The content script will handle rules on next navigation if needed
-        console.warn('[Code-Injector] Could not send rules to frame:', error.message);
+    // Content script runs at document_start but may not have registered its
+    // onMessage listener by the time onCommitted fires. Retry on failure.
+    var maxRetries = 5;
+    for (var attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
+                frameId: _injectionObject.info.frameId
+            });
+            return;
+        } catch (error) {
+            if (attempt < maxRetries - 1) {
+                await new Promise(r => setTimeout(r, 50));
+            } else {
+                console.warn('[Code-Injector] Could not send rules to frame after retries:', error.message);
+            }
+        }
     }
 }
 

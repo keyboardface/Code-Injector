@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Code Injector",
-  "version": "1.0.0",
-  "description": "Inject code into websites! (JavaScript, CSS, HTML and Files). Updated for Manifest V3",
+  "version": "2.0.0",
+  "description": "Inject code into websites! (JavaScript, CSS, HTML and Files). Forked by keyboardface and improved for Manifest V3",
   "permissions": [
     "storage",
     "scripting",

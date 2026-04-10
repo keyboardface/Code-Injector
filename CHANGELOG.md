@@ -4,6 +4,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-04-09
+
+#### Changed
+- Forked from [Lor-Saba/Code-Injector](https://github.com/Lor-Saba/Code-Injector) by keyboardface
+- Migrated to Manifest V3 for Chrome extension compliance
+- Updated version and description to reflect the fork
+
+#### Fixed
+- Fixed numerous bugs from the original version
+
 ## [0.3.3] - 2022-01-12 
    
 #### changed

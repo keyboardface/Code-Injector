@@ -1230,13 +1230,10 @@ window.addEventListener('click', function(_e){
             var ruleData = getRuleData(elRule);
 
             // send the rule data to the background script which will handle the injection
-            chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-                if (request.action === 'inject') {
-                  // Handle the inject request
-                  console.log('Injecting rule:', request.rule);
-                  // Perform the injection logic here
-                }
-              });
+            chrome.runtime.sendMessage({
+                action: 'inject',
+                rule: ruleData
+            });
             break;
 
         // set the active tab to be visible (handled by css)

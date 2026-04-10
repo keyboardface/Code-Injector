@@ -389,6 +389,14 @@ async function injectRules(_injectionObject) {
         throw new Error('Unknown tab info.');
     }
 
+    await chrome.scripting.executeScript({
+        target: {
+            tabId: _injectionObject.info.tabId,
+            frameIds: [_injectionObject.info.frameId]
+        },
+        files: ['script/inject.js']
+    });
+
     try {
         await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
             frameId: _injectionObject.info.frameId
@@ -409,6 +417,21 @@ function handleWebNavigationOnCommitted(_info) {
 
     // Update tab data for badge counter tracking
     updateActiveTabsData(_info);
+
+    (async function() {
+        try {
+            if (initializePromise) await initializePromise;
+            if (!rules || rules.length === 0) return;
+
+            const involvedRules = await getInvolvedRules(_info, rules);
+            if (!involvedRules.rules || involvedRules.rules.length === 0) return;
+
+            const splitRules = splitRulesByInjectionType(involvedRules);
+            await injectRules(splitRules);
+        } catch (error) {
+            console.warn('[Code-Injector] Failed to inject on navigation:', error.message || error);
+        }
+    })();
 }
 /**  
  * @param {info} _info 
@@ -450,38 +473,6 @@ function handleMessage(message, sender, sendResponse) {
                     chrome.runtime.sendMessage({action: message.action, success: false, error: err.message});
                 }
             });
-            break;
-
-        case 'get-injection-rules':
-            (async function() {
-                try {
-                    if (initializePromise) await initializePromise;
-
-                    if (!rules || rules.length === 0) {
-                        sendResponse({ onLoad: [], onCommit: [] });
-                        return;
-                    }
-
-                    var info = {
-                        tabId: sender.tab ? sender.tab.id : -1,
-                        frameId: sender.frameId || 0,
-                        parentFrameId: sender.frameId === 0 ? -1 : 0,
-                        url: message.url
-                    };
-
-                    var involvedRules = await getInvolvedRules(info, rules);
-                    if (!involvedRules.rules || involvedRules.rules.length === 0) {
-                        sendResponse({ onLoad: [], onCommit: [] });
-                        return;
-                    }
-
-                    var splitRules = splitRulesByInjectionType(involvedRules);
-                    sendResponse(splitRules.rules);
-                } catch (err) {
-                    console.error('[Code-Injector] get-injection-rules error:', err);
-                    sendResponse({ onLoad: [], onCommit: [] });
-                }
-            })();
             break;
 
         case 'get-current-tab-data':

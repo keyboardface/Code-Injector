@@ -40,14 +40,5 @@
     "page": "html/options-ui.html",
     "open_in_tab": false
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["script/inject.js"],
-      "run_at": "document_start",
-      "all_frames": true,
-      "match_about_blank": true,
-      "match_origin_as_fallback": true
-    }
-  ]
+  "content_scripts": []
 }

@@ -162,11 +162,35 @@
         }
     }
 
-    // messaging handler - only set up once
+    // messaging handler for push-based injection (popup "Inject" button)
     try{
         chrome.runtime.onMessage.addListener(handleOnMessage);
     }
     catch(_x){
+        // Silently fail - this can happen in restricted contexts
+    }
+
+    // Pull-based injection: request rules from the background script.
+    // This eliminates the race condition where background's sendMessage
+    // arrives before this listener is registered.
+    try {
+        chrome.runtime.sendMessage(
+            { action: 'get-injection-rules', url: window.location.href },
+            function(response) {
+                if (chrome.runtime.lastError || !response) return;
+
+                if (response.onCommit && response.onCommit.length) {
+                    insertRules([...response.onCommit]);
+                }
+
+                if (response.onLoad && response.onLoad.length) {
+                    ensureDocumentReady().then(function() {
+                        insertRules([...response.onLoad]);
+                    });
+                }
+            }
+        );
+    } catch(_x) {
         // Silently fail - this can happen in restricted contexts
     }
 

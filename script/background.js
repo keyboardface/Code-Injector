@@ -378,9 +378,8 @@ function serializeRules(_rules){
  * 
  * @param {array} _injectionObject 
  */
-// Updated injection function for Manifest V3
+// Push rules to a tab's content script (used by popup "Inject" button only)
 async function injectRules(_injectionObject) {
-    // Early exit - no rules to inject
     if (!_injectionObject.rules || 
         (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0)) {
         return;
@@ -390,72 +389,26 @@ async function injectRules(_injectionObject) {
         throw new Error('Unknown tab info.');
     }
 
-    // Content script runs at document_start but may not have registered its
-    // onMessage listener by the time onCommitted fires. Retry on failure.
-    var maxRetries = 5;
-    for (var attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
-                frameId: _injectionObject.info.frameId
-            });
-            return;
-        } catch (error) {
-            if (attempt < maxRetries - 1) {
-                await new Promise(r => setTimeout(r, 50));
-            } else {
-                console.warn('[Code-Injector] Could not send rules to frame after retries:', error.message);
-            }
-        }
+    try {
+        await chrome.tabs.sendMessage(_injectionObject.info.tabId, _injectionObject.rules, {
+            frameId: _injectionObject.info.frameId
+        });
+    } catch (error) {
+        console.warn('[Code-Injector] Could not send rules to frame:', error.message);
     }
 }
 
 /**
  * @param {info} _info 
  */
-async function handleWebNavigationOnCommitted(_info) {
-    // CRITICAL: Early exit for non-HTTP(S) URLs (chrome://, about:, etc.)
+function handleWebNavigationOnCommitted(_info) {
+    // Early exit for non-HTTP(S) URLs
     if (!_info.url || (!_info.url.startsWith('http://') && !_info.url.startsWith('https://'))) {
         return;
     }
 
-    // CRITICAL: Early exit if no rules are configured
-    if (!rules || rules.length === 0) {
-        // Only update tab data for main frame to track the URL
-        if (_info.frameId === 0) {
-            updateActiveTabsData(_info);
-        }
-        return;
-    }
-
-    // Check if any rules could possibly apply to subframes
-    // If all rules are topFrameOnly, skip subframe processing entirely
-    const isMainFrame = _info.frameId === 0;
-    if (!isMainFrame) {
-        const hasSubframeRules = rules.some(rule => !rule.topFrameOnly);
-        if (!hasSubframeRules) {
-            return; // All rules are main-frame only, skip subframes
-        }
-    }
-
-    // Update tab data (for badge counter)
+    // Update tab data for badge counter tracking
     updateActiveTabsData(_info);
-
-    try {
-        const involvedRules = await getInvolvedRules(_info, rules);
-        
-        // Early exit if no rules matched this URL
-        if (!involvedRules.rules || involvedRules.rules.length === 0) {
-            return;
-        }
-
-        const splitRules = splitRulesByInjectionType(involvedRules);
-        await injectRules(splitRules);
-    } catch (error) {
-        // Only log actual errors, not expected "no rules" scenarios
-        if (error && error.message !== 'No rules to be injected') {
-            console.error('[Code-Injector] Injection error:', error);
-        }
-    }
 }
 /**  
  * @param {info} _info 
@@ -497,6 +450,36 @@ function handleMessage(message, sender, sendResponse) {
                     chrome.runtime.sendMessage({action: message.action, success: false, error: err.message});
                 }
             });
+            break;
+
+        case 'get-injection-rules':
+            (async function() {
+                try {
+                    if (!rules || rules.length === 0) {
+                        sendResponse({ onLoad: [], onCommit: [] });
+                        return;
+                    }
+
+                    var info = {
+                        tabId: sender.tab ? sender.tab.id : -1,
+                        frameId: sender.frameId || 0,
+                        parentFrameId: sender.frameId === 0 ? -1 : 0,
+                        url: message.url
+                    };
+
+                    var involvedRules = await getInvolvedRules(info, rules);
+                    if (!involvedRules.rules || involvedRules.rules.length === 0) {
+                        sendResponse({ onLoad: [], onCommit: [] });
+                        return;
+                    }
+
+                    var splitRules = splitRulesByInjectionType(involvedRules);
+                    sendResponse(splitRules.rules);
+                } catch (err) {
+                    console.error('[Code-Injector] get-injection-rules error:', err);
+                    sendResponse({ onLoad: [], onCommit: [] });
+                }
+            })();
             break;
 
         case 'get-current-tab-data':

@@ -9,6 +9,7 @@
 
         <link rel="stylesheet" href="../style/material-icons.css">
         <link rel="stylesheet" href="../style/browser-action.min.css">
+        <link rel="stylesheet" href="../style/browser-action.custom.css">
 
         <script src="../script/vs/loader.js"></script>
         <script src="../script/browser-action.js"></script>
@@ -58,6 +59,11 @@
                 <div class="rules-controls">
                     <button class="btn btn-left btn-icon material-icons" data-name="btn-info-show" title="Info" tabindex="-1">&#xE88F;</button>
                     <button class="btn btn-left" data-name="btn-general-options-show" tabindex="-1">Options</button>
+                    <label class="rules-filter-toggle" title="Show only the rules matching the current tab URL">
+                        <input type="checkbox" data-name="cb-filter-matching-domain" tabindex="-1">
+                        Filter Rules by Matching Domain
+                        <span class="rules-match-badge" data-name="rules-match-badge" title="Matching rules for current tab">0</span>
+                    </label>
                     <button class="btn btn-primary" data-name="btn-rules-add" tabindex="-1">Add rule</button>
                 </div>
 
@@ -67,6 +73,14 @@
 
                 <div class="editor-selector">
                     <table>
+                        <tr>
+                            <td>
+                                <input type="text" data-name="txt-editor-title" class="inp" placeholder="Rule title (optional)">
+                            </td>
+                            <td>
+                                <button data-name="btn-editor-toggle-enabled" class="btn" tabindex="-1" title="Enable or disable this rule">Enabled</button>
+                            </td>
+                        </tr>
                         <tr>
                             <td>
                                 <input type="text" data-name="txt-editor-selector" class="inp" placeholder="URL pattern (regular expression)">
@@ -127,7 +141,8 @@
 
         <template class="template" data-name="rule">
             <li class="rule" data-enabled="true" data-id="">
-                <div class="r-name" data-name="do-grip"></div>
+                <div class="r-grip" data-name="do-grip"></div>
+                <div class="r-name"></div>
                 <div class="r-details">
                     <ul>
                         <li title="JavaScript"><div class="d-info color-js" data-active="false"></div></li>
@@ -140,6 +155,7 @@
                     <i class="material-icons" data-name="btn-rule-action" title="Actions">&#xE5CF;</i>
                 </div>
                 <div class="r-data">
+                    <textarea class="d-title"></textarea>
                     <textarea class="d-js"></textarea>
                     <textarea class="d-css"></textarea>
                     <textarea class="d-html"></textarea>

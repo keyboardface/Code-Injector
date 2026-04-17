@@ -1,0 +1,125 @@
+.rules-controls .rules-filter-toggle {
+    float: left;
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    margin-right: 10px;
+    font-size: 12px;
+    color: #445;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.rules-controls .rules-filter-toggle:hover {
+    color: #000;
+}
+
+.rules-controls .rules-filter-toggle input {
+    margin: 0 6px 0 0;
+    cursor: pointer;
+}
+
+.rules-controls .rules-filter-toggle .rules-match-badge {
+    display: inline-block;
+    min-width: 18px;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #4688f1;
+    color: #fff;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    font-weight: 600;
+}
+
+.rules-controls .rules-filter-toggle .rules-match-badge[data-empty="true"] {
+    background: #9aa4b3;
+}
+
+.rules-list[data-filtermatching="true"] .rule[data-visible="false"] {
+    display: none;
+}
+
+.rules-list[data-filterempty="true"]::before {
+    content: 'No rules match this domain.';
+    display: block;
+    text-align: center;
+    font-size: 13px;
+    color: #778;
+    padding-top: 18px;
+    font-style: italic;
+}
+
+.rule .r-grip {
+    position: relative;
+    display: inline-block;
+    width: 24px;
+    height: 30px;
+    line-height: 30px;
+    vertical-align: text-bottom;
+    cursor: ns-resize;
+}
+
+.rule {
+    cursor: pointer;
+}
+
+.rule .r-grip::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24px;
+    height: 100%;
+    background-image: url(images/drag-grip.png);
+    background-repeat: no-repeat;
+    background-position: 3px 2px;
+}
+
+.rule .r-name {
+    width: calc(100% - 159px);
+    padding: 0 10px;
+    cursor: pointer;
+}
+
+.rule .r-name::before {
+    display: none;
+}
+
+.rule[data-active="true"] .r-name,
+.rule[data-inner-active="true"] .r-name {
+    padding: 0 10px;
+}
+
+.editor-selector [data-name="txt-editor-title"] {
+    width: 100%;
+    padding-right: 10px;
+}
+
+.editor-selector table tr:first-child td {
+    padding-bottom: 6px;
+}
+
+.editor-selector table tr:first-child td:last-child {
+    width: 1%;
+}
+
+.editor-selector [data-name="btn-editor-toggle-enabled"] {
+    margin-left: 10px;
+    min-width: 92px;
+}
+
+.editor-selector [data-name="btn-editor-toggle-enabled"][data-enabled="true"] {
+    background: #4caf50;
+    color: #fff;
+}
+
+.editor-selector [data-name="btn-editor-toggle-enabled"][data-enabled="false"] {
+    background: #cfcfcf;
+    color: #444;
+}
+
+#editor .tab .tab-contents {
+    height: 334px;
+}

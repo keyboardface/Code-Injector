@@ -2,6 +2,10 @@
 
 var el;
 
+function normalizeRuleIndexPrimaryLabel(_value){
+    return _value === 'title' ? 'title' : 'domain';
+}
+
 /**
  * get the rules list
  * 
@@ -36,6 +40,7 @@ function setRules(_rules, _ok, _ko){
 function convertRuleJSItoCI(_rule){
 
     var rule = {
+        title: _rule.title || '',
         selector: _rule.url,
         enabled: _rule.enabled,
         onLoad: true,
@@ -92,6 +97,7 @@ function importRules(_rules){
             loadedRule = convertRuleJSItoCI(loadedRule);
 
         var rule = {
+            title: loadedRule.title,
             selector: loadedRule.selector,
             enabled: loadedRule.enabled,
             onLoad: loadedRule.onLoad,
@@ -107,6 +113,7 @@ function importRules(_rules){
 
         if (rule.selector === undefined) return;
         if (rule.enabled === undefined) return;
+        if (rule.title !== undefined && typeof rule.title !== 'string') return;
 
         if (typeof rule.code.js !== 'string') return;
         if (typeof rule.code.css !== 'string') return;
@@ -146,15 +153,18 @@ function updateRulesCounter(_rules){
  * update the settinge object to the storage
  */
 function updateSettings(){
-    browser.storage.local.set({
-        settings: {
-            nightmode: false, // el.cbNightmode.checked,
-            showcounter: el.cbShowcounter.checked,
-            size:{
-                width:  Math.max(el.txtSizeW.dataset.min|0, el.txtSizeW.value|0),
-                height: Math.max(el.txtSizeH.dataset.min|0, el.txtSizeH.value|0)
-            }
-        }
+    return browser.storage.local.get('settings').then(function(_data){
+        var settings = _data.settings && _data.settings.constructor === Object ? _data.settings : {};
+
+        settings.nightmode = false; // el.cbNightmode.checked,
+        settings.showcounter = el.cbShowcounter.checked;
+        settings.ruleIndexPrimaryLabel = normalizeRuleIndexPrimaryLabel(el.selRuleLabelOrder.value);
+        settings.size = {
+            width:  Math.max(el.txtSizeW.dataset.min|0, el.txtSizeW.value|0),
+            height: Math.max(el.txtSizeH.dataset.min|0, el.txtSizeH.value|0)
+        };
+
+        return browser.storage.local.set({ settings: settings });
     });
 }
 
@@ -183,6 +193,7 @@ function loadSettings(){
 
                 nightmode: false,
                 showcounter: false,
+                ruleIndexPrimaryLabel: 'domain',
                 size: {
                     width:  500,
                     height: 500
@@ -191,6 +202,7 @@ function loadSettings(){
             }, _data.settings);
 
             el.cbShowcounter.checked = settings.showcounter,
+            el.selRuleLabelOrder.value = normalizeRuleIndexPrimaryLabel(settings.ruleIndexPrimaryLabel);
             el.txtSizeW.value = settings.size.width;
             el.txtSizeH.value = settings.size.height;
         }
@@ -374,6 +386,7 @@ function getGitHubRule(_data){
 
         // new rule object
         var newRule = {
+            title: remoteConfig.name || '',
 
             selector: remoteConfig.selector,
             onLoad: !!remoteConfig.onLoad,
@@ -528,6 +541,7 @@ window.addEventListener('load', function(_e){
         fileImport:     document.querySelector('#file-import'),
         cbNightmode:    document.querySelector('input[data-name="cb-night-mode"]'),
         cbShowcounter:  document.querySelector('input[data-name="cb-show-counter"]'),
+        selRuleLabelOrder: document.querySelector('select[data-name="sel-rule-label-order"]'),
         txtSizeW:       document.querySelector('input[data-name="inp-size-width"]'),
         txtSizeH:       document.querySelector('input[data-name="inp-size-height"]'),
         modal:          document.querySelector('#modal'),
@@ -743,6 +757,11 @@ window.addEventListener('load', function(_e){
 
             // active or disable the badge to the icon
             case 'cb-show-counter': 
+                updateSettings();
+                break;
+
+            // choose title/domain label order in popup index
+            case 'sel-rule-label-order':
                 updateSettings();
                 break;
 

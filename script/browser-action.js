@@ -315,8 +315,111 @@ var editorConfig = {
     }
 };
 
+// reserved vertical space for editor chrome (selector + controls)
+var editorVerticalReservedSpace = 166;
+
 // DOM elements references, assigned on itialization
 var el = {};
+
+// popup settings state
+var popupSettings = {
+    filterRulesByMatchingDomain: false,
+    ruleIndexPrimaryLabel: 'domain'
+};
+
+/**
+ * normalize and return the configured rule index primary label
+ *
+ * @param {string} _value
+ */
+function normalizeRuleIndexPrimaryLabel(_value){
+    return _value === 'title' ? 'title' : 'domain';
+}
+
+/**
+ * compose the visible rule label in the rules list
+ *
+ * @param {string} _selector
+ * @param {string} _title
+ */
+function getRuleDisplayLabel(_selector, _title){
+    var selector = String(_selector || '').trim();
+    var title = String(_title || '').trim();
+
+    if (!title)
+        return selector;
+
+    return popupSettings.ruleIndexPrimaryLabel === 'title'
+        ? title +' - '+ selector
+        : selector +' - '+ title;
+}
+
+/**
+ * refresh each rule visible label from stored selector/title
+ */
+function refreshRulesDisplayLabels(){
+    if (!el.rulesList) return;
+
+    each(el.rulesList.children, function(){
+        if (!this.classList || !this.classList.contains('rule')) return;
+
+        var selector = (this.dataset.selector || '').trim();
+        var title = (this.dataset.title || '').trim();
+        var ruleName = this.querySelector('.r-name');
+        if (!ruleName) return;
+
+        ruleName.textContent = getRuleDisplayLabel(selector, title);
+        ruleName.setAttribute('title', getRuleDisplayLabel(selector, title));
+    });
+}
+
+/**
+ * set the matching filter state in storage
+ *
+ * @param {boolean} _state
+ */
+function setFilterRulesByMatchingDomainSetting(_state){
+    popupSettings.filterRulesByMatchingDomain = !!_state;
+
+    chrome.storage.local.get('settings').then(function(_data){
+        var settings = _data.settings && _data.settings.constructor === Object ? _data.settings : {};
+        settings.filterRulesByMatchingDomain = popupSettings.filterRulesByMatchingDomain;
+        chrome.storage.local.set({ settings: settings });
+    });
+}
+
+/**
+ * apply the current matching-domain filter state to the rules list
+ */
+function applyRulesMatchingDomainFilter(){
+    if (!el.rulesList) return;
+
+    var showOnlyMatching = popupSettings.filterRulesByMatchingDomain === true;
+    var visibleRulesCounter = 0;
+    var matchingRulesCounter = 0;
+
+    each(el.rulesList.children, function(){
+        if (!this.classList || !this.classList.contains('rule')) return;
+
+        var ruleMatchesDomain = this.dataset.active === 'true' || this.dataset.innerActive === 'true';
+        if (ruleMatchesDomain) matchingRulesCounter++;
+        var shouldDisplay = showOnlyMatching === false || ruleMatchesDomain === true;
+
+        this.dataset.visible = shouldDisplay;
+        if (shouldDisplay) visibleRulesCounter++;
+    });
+
+    el.rulesList.dataset.filtermatching = showOnlyMatching;
+    el.rulesList.dataset.filterempty = showOnlyMatching && visibleRulesCounter === 0;
+
+    if (el.rulesMatchingBadge){
+        el.rulesMatchingBadge.textContent = String(matchingRulesCounter);
+        el.rulesMatchingBadge.dataset.empty = matchingRulesCounter === 0;
+        el.rulesMatchingBadge.title = matchingRulesCounter === 1
+            ? '1 rule matches the current tab URL'
+            : matchingRulesCounter + ' rules match the current tab URL';
+    }
+}
 
 
 /**
@@ -335,6 +438,10 @@ function initialize(){
                 var size = _data.settings.size || { width: 500, height: 450 };
                 setBodySize(size.width, size.height);
             }
+
+            popupSettings.filterRulesByMatchingDomain = _data.settings.filterRulesByMatchingDomain === true;
+            popupSettings.ruleIndexPrimaryLabel = normalizeRuleIndexPrimaryLabel(_data.settings.ruleIndexPrimaryLabel);
+            refreshRulesDisplayLabels();
         }
     });
 
@@ -348,7 +455,10 @@ function initialize(){
             rulesList:      document.querySelector('#rules .rules-list'),
             rulesCtxMenu:   document.querySelector('#rules .ctx-menu'),
             editor:         document.querySelector('#editor'),
+            editorTitle:    document.querySelector('#editor .editor-selector [data-name="txt-editor-title"]'),
+            editorToggleEnabledBtn: document.querySelector('#editor .editor-selector [data-name="btn-editor-toggle-enabled"]'),
             editorSelector: document.querySelector('#editor .editor-selector [data-name="txt-editor-selector"]'),
+            editorCancelBtn: document.querySelector('#editor [data-name="btn-editor-cancel"]'),
             editorSaveBtn:  document.querySelector('#editor [data-name="btn-editor-save"]'),
             tab:            document.querySelector('#editor .tab'),
             tabContents:    document.querySelector('#editor .tab .tab-contents'),
@@ -356,7 +466,12 @@ function initialize(){
             resizeLabelW:   document.querySelector('#resize .r-size-width'),
             resizeLabelH:   document.querySelector('#resize .r-size-height'),
             infoTitle:      document.querySelector('#info .info-header .ih-title'),
+            filterRulesByMatchingDomain: document.querySelector('#rules [data-name="cb-filter-matching-domain"]'),
+            rulesMatchingBadge: document.querySelector('#rules [data-name="rules-match-badge"]')
         };
+
+        if (el.filterRulesByMatchingDomain)
+            el.filterRulesByMatchingDomain.checked = popupSettings.filterRulesByMatchingDomain;
 
         // listen for background.js messages
         chrome.runtime.onMessage.addListener(handleOnMessage);
@@ -403,15 +518,6 @@ function initialize(){
             // stop loading
             delete document.body.dataset.loading;
             
-            // check for a previous unsaved session (and restore it)
-            chrome.storage.local.get('lastSession').then(function(_data){
-
-                if (_data.lastSession) {
-                    setEditorPanelData(_data.lastSession);
-                    el.body.dataset.editing = true;
-                }
-            });
-
             //if (el.infoTitle && manifest.description)
             //    el.infoTitle.dataset.description = manifest.description.trim().replace(/\(.*?\)/, '');
             
@@ -516,7 +622,7 @@ function setBodySize(_width, _height){
 
     // set the editors container height
     var el = document.querySelector('.tab .tab-contents');
-        el.style.height = (_height - 130) +'px';
+        el.style.height = (_height - editorVerticalReservedSpace) +'px';
 
     // resize the monaco editors
     if (editorJS) editorJS.layout();
@@ -539,7 +645,8 @@ function getRuleData(_el){
         enabled:        _el.dataset.enabled === 'true',
         onLoad:         _el.dataset.onload === 'true',
         topFrameOnly:   _el.dataset.topframeonly === 'true',
-        selector:       _el.querySelector('.r-name').textContent.trim(),
+        title:          (_el.dataset.title || _el.querySelector('.d-title').value || '').trim(),
+        selector:       (_el.dataset.selector || _el.querySelector('.r-name').textContent || '').trim(),
 
         code:{
             js:     _el.querySelector('.d-js').value,
@@ -565,13 +672,20 @@ function setRuleData(_el, _data){
     if (!_el) return null;
     if ( _el.className !== 'rule') return null;
 
-    _el.querySelector('.r-name').textContent = _data.selector;
+    var selector = String(_data.selector || '').trim();
+    var title = String(_data.title || '').trim();
+
+    _el.dataset.selector = selector;
+    _el.dataset.title = title;
+    _el.querySelector('.r-name').textContent = getRuleDisplayLabel(selector, title);
+    _el.querySelector('.r-name').setAttribute('title', getRuleDisplayLabel(selector, title));
 
     _el.querySelector('.color-js').dataset.active = containsCode(_data.code.js);
     _el.querySelector('.color-css').dataset.active = containsCode(_data.code.css);
     _el.querySelector('.color-html').dataset.active = containsCode(_data.code.html);
     _el.querySelector('.color-files').dataset.active = _data.code.files.length > 0;
 
+    _el.querySelector('.r-data .d-title').value = title;
     _el.querySelector('.r-data .d-js').value = _data.code.js;
     _el.querySelector('.r-data .d-css').value = _data.code.css;
     _el.querySelector('.r-data .d-html').value = _data.code.html;
@@ -580,16 +694,33 @@ function setRuleData(_el, _data){
     _el.dataset.enabled      = _data.enabled === undefined ? true : _data.enabled;
     _el.dataset.onload       = _data.onLoad === undefined ? true : _data.onLoad;
     _el.dataset.topframeonly = _data.topFrameOnly === undefined ? true : _data.topFrameOnly;
-    _el.dataset.active       = new RegExp(_data.selector.trim()).test(currentTabData.topURL);
+    _el.dataset.active       = new RegExp(selector).test(currentTabData.topURL);
     _el.dataset.innerActive  = false;
 
     if (_el.dataset.topframeonly === 'false') {
         each(currentTabData.innerURLs, function(){
-            if (new RegExp(_data.selector.trim()).test(this)) {
+            if (new RegExp(selector).test(this)) {
                 _el.dataset.innerActive = true;
             }
         });        
     }
+}
+
+/**
+ * sync enabled toggle button label/state in editor header
+ */
+function refreshEditorEnabledToggle(){
+    if (!el.editor || !el.editorToggleEnabledBtn) return;
+
+    var cbEnabled = el.editor.querySelector('[data-name="cb-editor-enabled"]');
+    if (!cbEnabled) return;
+
+    var enabled = cbEnabled.checked === true;
+    el.editorToggleEnabledBtn.dataset.enabled = enabled;
+    el.editorToggleEnabledBtn.textContent = enabled ? 'Enabled' : 'Disabled';
+    el.editorToggleEnabledBtn.title = enabled
+        ? 'Click to disable this rule'
+        : 'Click to enable this rule';
 }
 
 /**
@@ -603,6 +734,7 @@ function setEditorPanelData(_data){
         target:         _data.target        || 'NEW',
         onLoad:         _data.onLoad        || false,
         enabled:        _data.enabled       || false,
+        title:          _data.title         || '',
         selector:       _data.selector      || '',
         topFrameOnly:   _data.topFrameOnly  || false,
 
@@ -660,6 +792,7 @@ function setEditorPanelData(_data){
 
     // final assignments
     el.tab.dataset.selected = activeTab;
+    el.editorTitle.value = data.title.trim();
     el.editorSelector.value = data.selector.trim();
     el.editorSelector.dataset.active = data.selector.trim() ? new RegExp(data.selector.trim()).test(currentTabData.topURL) : false;
     el.editorSelector.dataset.error = false;
@@ -667,6 +800,7 @@ function setEditorPanelData(_data){
     el.editor.querySelector('[data-name="cb-editor-enabled"]').checked = data.enabled;
     el.editor.querySelector('[data-name="cb-editor-onload"]').checked = data.onLoad;
     el.editor.querySelector('[data-name="cb-editor-topframeonly"]').checked = data.topFrameOnly;
+    refreshEditorEnabledToggle();
 
     // set the focus on the URL pattern input
     // (after a timeout to avoid a performance rendering bug)
@@ -686,6 +820,7 @@ function getEditorPanelData(){
         enabled:        el.editor.querySelector('[data-name="cb-editor-enabled"]').checked,
         onLoad:         el.editor.querySelector('[data-name="cb-editor-onload"]').checked,
         topFrameOnly:   el.editor.querySelector('[data-name="cb-editor-topframeonly"]').checked,
+        title:          el.editorTitle.value.trim(),
         selector:       el.editorSelector.value.trim(),
 
         code:{
@@ -738,6 +873,8 @@ function loadRules(){
 
             el.rulesList.appendChild(ruleEl);
         });
+
+        applyRulesMatchingDomainFilter();
     });
 }
 
@@ -828,6 +965,36 @@ function showRuleContextMenu(_config){
 }
 
 /**
+ * open a specific rule in the editor panel
+ *
+ * @param {Element} _ruleEl
+ */
+function openRuleInEditor(_ruleEl){
+    if (_ruleEl === null) return;
+
+    setEditorPanelData({
+        target:         _ruleEl.dataset.id,
+        enabled:        _ruleEl.dataset.enabled === "true",
+        onLoad:         _ruleEl.dataset.onload === "true",
+        topFrameOnly:   _ruleEl.dataset.topframeonly === "true",
+        title:          (_ruleEl.dataset.title || _ruleEl.querySelector('.r-data .d-title').value || '').trim(),
+        selector:       (_ruleEl.dataset.selector || _ruleEl.querySelector('.r-name').textContent || '').trim(),
+        code:{
+            js: _ruleEl.querySelector('.r-data .d-js').value,
+            css: _ruleEl.querySelector('.r-data .d-css').value,
+            html: _ruleEl.querySelector('.r-data .d-html').value,
+            files: JSON.parse(_ruleEl.querySelector('.r-data .d-files').value),
+        }
+    });
+
+    // hide the contextmenu if it's visible
+    hideRuleContextMenu();
+
+    // switch to the editor page
+    el.body.dataset.editing = true;
+}
+
+/**
  * 
  * @param {object} _mex 
  * @param {object} _sender 
@@ -896,6 +1063,11 @@ window.addEventListener('keydown', function(_e){
             switch(target.dataset.name){
 
                 case 'txt-editor-selector': 
+                    if (reverse && el.editorTitle){
+                        el.editorTitle.focus();
+                        break;
+                    }
+
                     switch(el.tab.dataset.selected){
 
                         case 'js':
@@ -917,6 +1089,11 @@ window.addEventListener('keydown', function(_e){
                                 el.filesList.firstElementChild.querySelector('input').focus();
                             break;
                     }                        
+                    break;
+
+                case 'txt-editor-title':
+                    if (el.editorSelector)
+                        el.editorSelector.focus();
                     break;
 
                 case 'txt-editor-inputarea': /* // TODO: [Do not work on linux]
@@ -1054,12 +1231,35 @@ window.addEventListener('keydown', function(_e){
 
         case 27: // ESC
 
-            // close the editor page with SHIFT + ESC
-            if (_e.shiftKey)
-                delete el.body.dataset.editing;
+            // close the editor page like pressing "Cancel"
+            if (el.body.dataset.editing == 'true' && el.editorCancelBtn){
+                el.editorCancelBtn.click();
+
+                _e.preventDefault();
+                _e.stopPropagation();
+                return false;
+            }
+
+            // close rule action popup menu first (if visible)
+            if (el.rulesCtxMenu && el.rulesCtxMenu.dataset.hidden !== 'true'){
+                hideRuleContextMenu();
+
+                _e.preventDefault();
+                _e.stopPropagation();
+                return false;
+            }
 
             // Close the info page with just ESC
-            delete el.body.dataset.info;
+            if (el.body.dataset.info){
+                delete el.body.dataset.info;
+
+                _e.preventDefault();
+                _e.stopPropagation();
+                return false;
+            }
+
+            // close the extension popup when focused on rules index
+            window.close();
 
             _e.preventDefault();
             _e.stopPropagation();
@@ -1076,6 +1276,7 @@ window.addEventListener('keydown', function(_e){
 window.addEventListener('click', function(_e){
 
     var target = _e.target;
+    var handled = false;
 
     // the event is handled by checking the "data-name" attribute of the target element 
     switch(target.dataset.name){
@@ -1088,6 +1289,7 @@ window.addEventListener('click', function(_e){
                 x: _e.pageX, 
                 y: _e.pageY
             }); 
+            handled = true;
             break;
 
         // delete a rule
@@ -1108,6 +1310,7 @@ window.addEventListener('click', function(_e){
                 setTimeout(function(){
                     elRule.remove();
                     saveRules();
+                    applyRulesMatchingDomainFilter();
                 }, 200);
 
                 // hide the contextmenu
@@ -1122,6 +1325,7 @@ window.addEventListener('click', function(_e){
                     target.onmouseleave = null;
                 };
             }
+            handled = true;
             break;
 
         // open the rule in the editor page
@@ -1129,27 +1333,8 @@ window.addEventListener('click', function(_e){
 
             // get the rule element by using the id saved into the contextmen
             var elRule = document.querySelector('.rule[data-id="'+el.rulesCtxMenu.dataset.id+'"]');
-            if (elRule === null) return;
-
-            setEditorPanelData({
-                target:         elRule.dataset.id,
-                enabled:        elRule.dataset.enabled === "true",
-                onLoad:         elRule.dataset.onload === "true",
-                topFrameOnly:   elRule.dataset.topframeonly === "true",
-                selector:       elRule.querySelector('.r-name').textContent.trim(),
-                code:{
-                    js: elRule.querySelector('.r-data .d-js').value,
-                    css: elRule.querySelector('.r-data .d-css').value,
-                    html: elRule.querySelector('.r-data .d-html').value,
-                    files: JSON.parse(elRule.querySelector('.r-data .d-files').value),
-                }
-            });
-
-            // hide the contextmenu
-            hideRuleContextMenu();
-
-            // switch to the editor page
-            el.body.dataset.editing = true;
+            openRuleInEditor(elRule);
+            handled = true;
             break;
 
         // open the rule in the editor page
@@ -1174,6 +1359,7 @@ window.addEventListener('click', function(_e){
                         
             // hide the contextmenu
             hideRuleContextMenu();
+            handled = true;
             break;
 
         // open the rule in the editor page
@@ -1198,6 +1384,7 @@ window.addEventListener('click', function(_e){
 
             // hide the contextmenu
             hideRuleContextMenu();
+            handled = true;
             break;
 
         // open the rule in the editor page
@@ -1217,6 +1404,7 @@ window.addEventListener('click', function(_e){
 
             // save the rules
             saveRules();
+            handled = true;
             break;
 
         // open the rule in the editor page
@@ -1234,17 +1422,39 @@ window.addEventListener('click', function(_e){
                 action: 'inject',
                 rule: ruleData
             });
+            handled = true;
             break;
 
         // set the active tab to be visible (handled by css)
         case 'btn-tab': 
             el.tab.dataset.selected = target.dataset.for;
+            handled = true;
             break;
 
         // abor changes or the creation of a new rule
         case 'btn-editor-cancel': 
             delete el.body.dataset.editing;
             chrome.storage.local.remove('lastSession');
+            handled = true;
+            break;
+
+        // toggle rule enabled state from the title row button
+        case 'btn-editor-toggle-enabled':
+            var cbEnabled = el.editor.querySelector('[data-name="cb-editor-enabled"]');
+            if (cbEnabled){
+                cbEnabled.checked = !cbEnabled.checked;
+                refreshEditorEnabledToggle();
+
+                // persist immediately for existing rules
+                if (el.editor.dataset.target !== 'NEW'){
+                    var linkedRule = el.rulesList.querySelector('.rule[data-id="'+el.editor.dataset.target+'"]');
+                    if (linkedRule){
+                        linkedRule.dataset.enabled = cbEnabled.checked;
+                        saveRules();
+                    }
+                }
+            }
+            handled = true;
             break;
 
         // open the editor page with empty values to create a new rule
@@ -1256,6 +1466,7 @@ window.addEventListener('click', function(_e){
                 topFrameOnly: true,
                 enabled: true,
                 activeTab: 'js',
+                title: '',
                 selector: '',
                 code:{
                     js: '// Type your JavaScript code here.\n\n',
@@ -1266,6 +1477,7 @@ window.addEventListener('click', function(_e){
             });
 
             el.body.dataset.editing = true;
+            handled = true;
             break;
 
         // save the editor page values to the linked rule (or a new one if not specified)
@@ -1299,8 +1511,10 @@ window.addEventListener('click', function(_e){
             delete el.body.dataset.editing;
 
             saveRules();
+            applyRulesMatchingDomainFilter();
 
             chrome.storage.local.remove('lastSession');
+            handled = true;
             break;
 
         // remove an element from the files list (if not the last one)
@@ -1313,6 +1527,7 @@ window.addEventListener('click', function(_e){
                     file.remove();
                 }, 200);
             }
+            handled = true;
             break;
 
         // set the hostname of the current active tab address into the URL pattern input
@@ -1320,22 +1535,26 @@ window.addEventListener('click', function(_e){
             el.editorSelector.value = getPathHost(currentTabData.topURL).replace(/\./g, '\\.');
             el.editorSelector.dataset.active = true;
             el.editorSelector.focus();
+            handled = true;
             break;
         
         // show the info page
         case 'btn-info-show': 
             el.body.dataset.info = true;
+            handled = true;
             break;
         
         // hides the info page
         case 'btn-info-hide': 
             delete el.body.dataset.info;
+            handled = true;
             break;
 
         // hides the info page
         case 'btn-rule-show-contextmenu': 
             el.rulesList.dataset.actionvisible = true;
             target.dataset.actionvisible = true;
+            handled = true;
             break;
 
         // hides the action contextmenu
@@ -1343,13 +1562,24 @@ window.addEventListener('click', function(_e){
 
             // hide the contextmenu
             hideRuleContextMenu();
+            handled = true;
             break;
 
         case 'btn-general-options-show':
 
             // open the Web Extension option page
             chrome.runtime.openOptionsPage();
+            handled = true;
             break;
+    }
+
+    // clicking a rule row opens it directly in the editor
+    if (handled === false){
+        var elRule = closest(target, '.rule');
+        if (elRule
+        &&  target.closest('.r-controls') === null
+        &&  target.closest('.r-grip') === null)
+            openRuleInEditor(elRule);
     }
 
     // possible changes in a current editing process
@@ -1392,7 +1622,7 @@ window.addEventListener('mousedown', function(_e){
             var evMU = function(){
 
                 // set the editors container height
-                el.tabContents.style.height = (window.innerHeight - 130) +'px';
+                el.tabContents.style.height = (window.innerHeight - editorVerticalReservedSpace) +'px';
 
                 // reset the css
                 delete document.body.dataset.resizing;
@@ -1580,6 +1810,11 @@ window.addEventListener('change', function(_e){
                 file.dataset.ext = target.value;
 
             target.setAttribute('title', file.dataset.ext ? file.dataset.type +' - '+ file.dataset.ext.toUpperCase() : 'Unknown (will be skipped)');
+            break;
+
+        case 'cb-filter-matching-domain':
+            setFilterRulesByMatchingDomainSetting(target.checked);
+            applyRulesMatchingDomainFilter();
             break;
 
     }

@@ -517,7 +517,7 @@ function setBadgeCounter(_tabData) {
         text = text ? String(text) : '';
     }
 
-    if (!settings.showcounter) {
+    if (settings.showcounter === false) {
         text = '';
     }
 
@@ -603,30 +603,32 @@ function getActiveTab(){
  }
 
 /**
+ * recalculate and apply badge state for the active tab
+ */
+function refreshBadgeForActiveTab(){
+    getActiveTab().then(function(_tab){
+        if (!_tab || _tab.id === undefined) return;
+        updateActiveTabsData({
+            parentFrameId: -1,
+            tabId: _tab.id,
+            url: _tab.url || '',
+        });
+    });
+}
+
+/**
  * @param {object} _data 
  */
 function handleStorageChanged(_changes, _areaName) {
     if (_changes.rules && _changes.rules.newValue) {
         rules = serializeRules(_changes.rules.newValue);
         chrome.storage.local.set({parsedRules: rules});
+        refreshBadgeForActiveTab();
     }
 
     if (_changes.settings && _changes.settings.newValue) {
-        settings = _changes.settings.newValue;
-
-        getActiveTab().then(function(_tab) {
-            if (!_tab) return;
-            var tabData = activeTabsData[_tab.id];
-            if (tabData) {
-                setBadgeCounter(tabData);
-            } else {
-                updateActiveTabsData({
-                    parentFrameId: -1,
-                    tabId: _tab.id,
-                    url: _tab.url,
-                });
-            }
-        });
+        settings = Object.assign({}, settings, _changes.settings.newValue);
+        refreshBadgeForActiveTab();
     }
 }
 
@@ -643,7 +645,12 @@ function countInvolvedRules(_tabData, _cb){
     countInvolvedRules.intCounter = setTimeout(function(){
         chrome.storage.local.get('rules', function(_data){
 
-            if (!_data.rules) return;
+            if (!_data.rules) {
+                _tabData.top = 0;
+                _tabData.inner = 0;
+                _cb();
+                return;
+            }
 
             // reset the counters
             _tabData.top = 0;
@@ -841,7 +848,7 @@ async function initialize() {
     }
 
     if (data.settings) {
-        settings = data.settings;
+        settings = Object.assign({}, settings, data.settings);
     }
 }
 
@@ -858,4 +865,7 @@ chrome.runtime.onMessage.addListener(handleMessage);
 
 // start ->
 initializePromise = initialize();
+initializePromise.then(function(){
+    refreshBadgeForActiveTab();
+});
 

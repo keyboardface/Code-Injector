@@ -250,7 +250,7 @@ function setBadgeCounter(_tabData) {
     }
 
     // Empty the text if the counter badge has been turned off in the settings
-    if (!settings.showcounter){
+    if (settings.showcounter === false){
         text = '';
     }
 
@@ -334,6 +334,21 @@ function getActiveTab(){
 }
 
 /**
+ * recalculate and apply badge state for the active tab
+ */
+function refreshBadgeForActiveTab(){
+    return getActiveTab()
+    .then(function(_tab){
+        if (!_tab || _tab.id === undefined) return;
+        updateActiveTabsData({
+            parentFrameId: -1,
+            tabId: _tab.id,
+            url: _tab.url || '',
+        });
+    });
+}
+
+/**
  * @param {object} _data 
  */
 function handleStorageChanged(_data){
@@ -343,16 +358,12 @@ function handleStorageChanged(_data){
         rules = serializeRules(_data.rules.newValue);
 
         browser.storage.local.set({parsedRules: rules});
+        refreshBadgeForActiveTab();
     }
 
     if (_data.settings && _data.settings.newValue){
-        settings = _data.settings.newValue;
-
-        // getActiveTab()
-        // .then(function(_tab){
-        // 
-        //     setBadgeCounter(activeTabsData[_tab.id]);
-        // });
+        settings = Object.assign({}, settings, _data.settings.newValue);
+        refreshBadgeForActiveTab();
     }
 }
 
@@ -369,7 +380,12 @@ function countInvolvedRules(_tabData, _cb){
     countInvolvedRules.intCounter = setTimeout(function(){
         browser.storage.local.get('rules').then(function(_data){
 
-            if (!_data.rules) return;
+            if (!_data.rules){
+                _tabData.top = 0;
+                _tabData.inner = 0;
+                _cb();
+                return;
+            }
 
             // reset the counters
             _tabData.top = 0;
@@ -566,7 +582,7 @@ function readFile(_path, _cb){
  */
 function initialize(){
 
-    browser.storage.local.get()
+    return browser.storage.local.get()
     .then(function(_data){
         
         if (_data.parsedRules){
@@ -575,7 +591,7 @@ function initialize(){
         }
     
         if (_data.settings){
-            settings = _data.settings;
+            settings = Object.assign({}, settings, _data.settings);
         }
     });
 }
@@ -586,4 +602,6 @@ browser.webNavigation.onCommitted.addListener(handleWebNavigationOnCommitted);
 browser.runtime.onMessage.addListener(handleOnMessage);
 
 // start ->
-initialize();
+initialize().then(function(){
+    refreshBadgeForActiveTab();
+});

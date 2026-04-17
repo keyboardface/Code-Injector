@@ -697,6 +697,26 @@
         padding-top: 10px;
         border-top: 1px dashed rgba(0,0,0,.1);
     }
+    .rules-filter-toggle{
+        float: left;
+        display: inline-flex;
+        align-items: center;
+        height: 30px;
+        margin-right: 10px;
+        font-size: 12px;
+        color: #445;
+        cursor: pointer;
+        white-space: nowrap;
+
+        &:hover{
+            color: #000;
+        }
+
+        input{
+            margin: 0 6px 0 0;
+            cursor: pointer;
+        }
+    }
     .add-rules:hover{
         background: #c2c2c2;
     }
@@ -737,6 +757,22 @@
                     transition: opacity 0s;
                 }
             }
+        }
+
+        &[data-filtermatching="true"]{
+            .rule[data-visible="false"]{
+                display: none;
+            }
+        }
+
+        &[data-filterempty="true"]::before{
+            content: 'No rules match this domain.';
+            display: block;
+            text-align: center;
+            font-size: 13px;
+            color: #778;
+            padding-top: 18px;
+            font-style: italic;
         }
     }
 

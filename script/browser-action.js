@@ -381,9 +381,20 @@ function normalizeRuleForInjectionKey(_rule){
     };
 }
 
+// djb2 hash -> short hex string. Must match the identical implementation in
+// script/background.js so manual and auto injection produce the same ID for
+// the same rule definition.
+function hashStringToId(_str){
+    var hash = 5381;
+    for (var i = 0; i < _str.length; i++){
+        hash = ((hash << 5) + hash + _str.charCodeAt(i)) | 0;
+    }
+    return 'ci_' + (hash >>> 0).toString(16);
+}
+
 function getInjectionRuleId(_rule){
     try{
-        return JSON.stringify(normalizeRuleForInjectionKey(_rule));
+        return hashStringToId(JSON.stringify(normalizeRuleForInjectionKey(_rule)));
     }
     catch(_x){
         return '';

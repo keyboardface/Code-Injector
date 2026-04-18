@@ -406,14 +406,14 @@ function setEditorInjectButtonState(_state){
 
     if (_state === 'loading'){
         el.editorInjectBtn.dataset.mode = 'loading';
-        el.editorInjectBtn.textContent = '\uE627';
+        el.editorInjectBtn.innerHTML = '<i class="material-icons">\uE627</i>';
         el.editorInjectBtn.title = 'Working...';
         return;
     }
 
     var isInjected = _state === true;
     el.editorInjectBtn.dataset.mode = isInjected ? 'remove' : 'inject';
-    el.editorInjectBtn.textContent = isInjected ? '\uE5CD' : '\uE3E7';
+    el.editorInjectBtn.innerHTML = '<i class="material-icons">'+ (isInjected ? '\uE5CD' : '\uE3E7') +'</i>';
     el.editorInjectBtn.title = isInjected
         ? 'Remove injected nodes from this tab'
         : 'Inject';
@@ -860,7 +860,10 @@ function setLastSession(){
 
     // check for code changes to set the languages dots
     checkEditorDots();
-    refreshEditorInjectButtonState();
+    // Preserve the transient loading UI while a manual inject/revert is pending.
+    if (!el.editorInjectBtn || el.editorInjectBtn.dataset.mode !== 'loading'){
+        refreshEditorInjectButtonState();
+    }
 
     // stop the previous timeout if not fired yet
     clearTimeout(unsavedChangesTimeout);

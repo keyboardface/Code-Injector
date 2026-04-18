@@ -186,7 +186,16 @@
 }
 
 .editor-selector [data-name="btn-editor-inject"][data-mode="loading"] {
+    animation: none;
+}
+
+.editor-selector [data-name="btn-editor-inject"][data-mode="loading"] i {
     animation: ci-spin 0.9s linear infinite;
+    display: inline-block;
+}
+
+.editor-selector [data-name="btn-editor-inject"] i {
+    pointer-events: none;
 }
 
 #rules .ctx-menu [data-name="btn-rule-inject"][data-mode="loading"] i {

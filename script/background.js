@@ -326,9 +326,59 @@ function hashStringToId(_str){
     return 'ci_' + (hash >>> 0).toString(16);
 }
 
+function isFullRuleShape(_rule){
+    if (!_rule || _rule.constructor !== Object) return false;
+    if (!_rule.code || _rule.code.constructor !== Object) return false;
+    return (
+        _rule.code.hasOwnProperty('js') ||
+        _rule.code.hasOwnProperty('css') ||
+        _rule.code.hasOwnProperty('html') ||
+        Array.isArray(_rule.code.files)
+    );
+}
+
+function getSerializedRulePieceId(_rule){
+    if (!_rule || _rule.constructor !== Object) return '';
+    try{
+        return hashStringToId(JSON.stringify({
+            type: String(_rule.type || ''),
+            selector: String(_rule.selector || '').trim(),
+            onLoad: _rule.onLoad === true,
+            topFrameOnly: _rule.topFrameOnly !== false,
+            path: String(_rule.path || ''),
+            local: _rule.local === true,
+            code: typeof _rule.code === 'string' ? _rule.code : ''
+        }));
+    }
+    catch(_x){
+        return '';
+    }
+}
+
+function normalizeRuleId(_ruleId, _rule){
+    // Preferred path: regenerate from the full canonical rule definition.
+    if (isFullRuleShape(_rule)){
+        try{
+            return hashStringToId(JSON.stringify(normalizeRuleForInjectionKey(_rule)));
+        }
+        catch(_x){}
+    }
+
+    // Legacy migration path: if old code stored serialized rule JSON as id,
+    // hash that serialized payload into ci_<hex>.
+    if (_ruleId){
+        var id = String(_ruleId);
+        if (/^ci_[0-9a-f]+$/i.test(id)) return id.toLowerCase();
+        return hashStringToId(id);
+    }
+
+    // Final fallback for legacy parsed rule pieces that never had a ruleId.
+    return getSerializedRulePieceId(_rule);
+}
+
 function getInjectionRuleId(_rule){
     try{
-        return hashStringToId(JSON.stringify(normalizeRuleForInjectionKey(_rule)));
+        return normalizeRuleId('', _rule);
     }
     catch(_x){
         return '';
@@ -769,6 +819,8 @@ function getInvolvedRules(_info, _rules){
             if (!rule.enabled)
                 return checkRule(_ind+1);
     
+            var effectiveRuleId = normalizeRuleId(rule.ruleId, rule);
+
             // skip if the current rule can only be injected to the top-level frame 
             if (rule.topFrameOnly && _info.parentFrameId !== -1)
                 return checkRule(_ind+1);
@@ -785,20 +837,20 @@ function getInvolvedRules(_info, _rules){
                     readFile(rule.path, function(_res){
     
                         if (_res.success)
-                            result.push({ type: rule.type, onLoad: rule.onLoad , code: _res.response, ruleId: rule.ruleId });
+                            result.push({ type: rule.type, onLoad: rule.onLoad , code: _res.response, ruleId: effectiveRuleId });
                         else if (_res.message)
-                            result.push({ type: 'js', onLoad: rule.onLoad , code: 'console.error(\'Code-Injector [ERROR]:\', \''+_res.message.replace(/\\/g, '\\\\')+'\')', ruleId: rule.ruleId });
+                            result.push({ type: 'js', onLoad: rule.onLoad , code: 'console.error(\'Code-Injector [ERROR]:\', \''+_res.message.replace(/\\/g, '\\\\')+'\')', ruleId: effectiveRuleId });
     
                         checkRule(_ind+1);
                     });
                 }
                 else{
-                    result.push({ type: rule.type, onLoad: rule.onLoad, path: rule.path, ruleId: rule.ruleId });
+                    result.push({ type: rule.type, onLoad: rule.onLoad, path: rule.path, ruleId: effectiveRuleId });
                     checkRule(_ind+1);
                 }
             }
             else{
-                result.push({ type: rule.type, onLoad: rule.onLoad, code: rule.code, ruleId: rule.ruleId });
+                result.push({ type: rule.type, onLoad: rule.onLoad, code: rule.code, ruleId: effectiveRuleId });
                 checkRule(_ind+1);
             }
         };
@@ -879,8 +931,21 @@ function readFile(_path, _cb){
 var initializePromise = null;
 async function initialize() {
     const data = await chrome.storage.local.get(null);
-    if (data.parsedRules) {
-        rules = data.parsedRules;
+    if (Array.isArray(data.rules)) {
+        // Always rebuild runtime parsed rules from canonical saved rules so
+        // legacy cached parsedRules can't keep old JSON-blob rule IDs alive.
+        rules = serializeRules(data.rules);
+        chrome.storage.local.set({parsedRules: rules});
+    }
+    else if (Array.isArray(data.parsedRules)) {
+        // Fallback for older installs missing "rules". Normalize any legacy
+        // rule-id values so we never emit JSON blobs in DOM attributes.
+        rules = data.parsedRules.map(function(_rule){
+            var cloned = Object.assign({}, _rule);
+            cloned.ruleId = normalizeRuleId(cloned.ruleId, cloned);
+            return cloned;
+        });
+        chrome.storage.local.set({parsedRules: rules});
     }
 
     if (data.settings) {

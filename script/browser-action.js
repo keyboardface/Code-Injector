@@ -586,6 +586,20 @@ async function sendListDirect(){
     }
 }
 
+// Ensures loading UI is visible long enough to be perceived. Without this,
+// fast inject operations (<100ms) flash the spinner imperceptibly.
+function withMinDuration(_promise, _minMs){
+    var start = Date.now();
+    return _promise.then(function(_value){
+        var elapsed = Date.now() - start;
+        var remaining = Math.max(0, _minMs - elapsed);
+        if (!remaining) return _value;
+        return new Promise(function(resolve){
+            setTimeout(function(){ resolve(_value); }, remaining);
+        });
+    });
+}
+
 function refreshAllInjectButtonStates(){
     refreshEditorInjectButtonState();
 
@@ -1684,7 +1698,7 @@ window.addEventListener('click', function(_e){
             setRuleContextInjectState('loading');
             if (el.editorInjectBtn) setEditorInjectButtonState('loading');
 
-            (wasInjected ? sendRevertDirect(ruleKey) : sendInjectDirect(ruleKey, ruleData))
+            withMinDuration(wasInjected ? sendRevertDirect(ruleKey) : sendInjectDirect(ruleKey, ruleData), 450)
             .then(function(_result){
                 if (ctxInjectBtn){
                     ctxInjectBtn.onmouseleave = function(){
@@ -1762,7 +1776,7 @@ window.addEventListener('click', function(_e){
 
             setEditorInjectButtonState('loading');
 
-            (editorWasInjected ? sendRevertDirect(editorRuleKey) : sendInjectDirect(editorRuleKey, currentRuleData))
+            withMinDuration(editorWasInjected ? sendRevertDirect(editorRuleKey) : sendInjectDirect(editorRuleKey, currentRuleData), 450)
             .then(function(){
                 return reconcileInjectedState();
             });

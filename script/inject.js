@@ -5,6 +5,21 @@
     var INJECTOR_ATTR = 'data-code-injector';
     var RULE_ID_ATTR = 'data-code-injector-rule-id';
     var AUTO_ID_ATTR = 'data-code-injector-auto';
+    var VALID_RULE_ID = /^ci_[0-9a-f]+$/;
+
+    // One-time cleanup: remove any injected nodes whose rule-id doesn't match
+    // the current short-hash format (ci_<hex>). Catches leftovers from older
+    // versions of this extension that wrote full JSON blobs as the ID.
+    try{
+        var legacy = document.querySelectorAll('[' + RULE_ID_ATTR + ']');
+        for (var _li = 0; _li < legacy.length; _li++){
+            var _lid = legacy[_li].getAttribute(RULE_ID_ATTR);
+            if (_lid && !VALID_RULE_ID.test(_lid) && legacy[_li].parentNode){
+                legacy[_li].parentNode.removeChild(legacy[_li]);
+            }
+        }
+    }
+    catch(_x){}
 
     function appendCache(_path){
         return _path + (_path.indexOf('?') !== -1 ? '&' : '?') + 'cache=' + Date.now();

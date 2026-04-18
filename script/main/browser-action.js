@@ -179,8 +179,10 @@ function initialize(){
             rulesCtxMenu:   document.querySelector('#rules .ctx-menu'),
             editor:         document.querySelector('#editor'),
             editorTitle:    document.querySelector('#editor .editor-selector [data-name="txt-editor-title"]'),
+            editorInjectBtn: document.querySelector('#editor .editor-selector [data-name="btn-editor-inject"]'),
             editorToggleEnabledBtn: document.querySelector('#editor .editor-selector [data-name="btn-editor-toggle-enabled"]'),
             editorSelector: document.querySelector('#editor .editor-selector [data-name="txt-editor-selector"]'),
+            editorDeleteBtn: document.querySelector('#editor [data-name="btn-editor-delete"]'),
             editorCancelBtn: document.querySelector('#editor [data-name="btn-editor-cancel"]'),
             editorSaveBtn:  document.querySelector('#editor [data-name="btn-editor-save"]'),
             tab:            document.querySelector('#editor .tab'),
@@ -452,6 +454,22 @@ function refreshEditorEnabledToggle(){
 }
 
 /**
+ * sync delete button visibility/confirm state in editor footer
+ */
+function refreshEditorDeleteButton(){
+    if (!el.editorDeleteBtn || !el.editor) return;
+
+    var canDelete = el.editor.dataset.target && el.editor.dataset.target !== 'NEW';
+    el.editorDeleteBtn.dataset.visible = canDelete;
+
+    delete el.editorDeleteBtn.dataset.confirm;
+    el.editorDeleteBtn.textContent = 'Delete';
+    el.editorDeleteBtn.title = canDelete
+        ? 'Delete this rule'
+        : 'Delete is available after saving';
+}
+
+/**
  * set a rule's data to the editor panel 
  * 
  * @param {Object} _data 
@@ -529,6 +547,7 @@ function setEditorPanelData(_data){
     el.editor.querySelector('[data-name="cb-editor-onload"]').checked = data.onLoad;
     el.editor.querySelector('[data-name="cb-editor-topframeonly"]').checked = data.topFrameOnly;
     refreshEditorEnabledToggle();
+    refreshEditorDeleteButton();
 
     // set the focus on the URL pattern input
     // (after a timeout to avoid a performance rendering bug)
@@ -1163,6 +1182,58 @@ window.addEventListener('click', function(_e){
         case 'btn-editor-cancel': 
             delete el.body.dataset.editing;
             browser.storage.local.remove('lastSession');
+            handled = true;
+            break;
+
+        // delete the rule currently opened in the editor
+        case 'btn-editor-delete':
+            if (el.editor.dataset.target === 'NEW'){
+                handled = true;
+                break;
+            }
+
+            if (target.dataset.confirm){
+                var linkedRule = el.rulesList.querySelector('.rule[data-id="'+el.editor.dataset.target+'"]');
+                if (linkedRule){
+                    linkedRule.dataset.removing = true;
+                    setTimeout(function(){
+                        linkedRule.remove();
+                        saveRules();
+                        applyRulesMatchingDomainFilter();
+                    }, 200);
+                }
+
+                delete el.body.dataset.editing;
+                browser.storage.local.remove('lastSession');
+            }
+            else{
+                target.dataset.confirm = true;
+                target.textContent = 'Confirm';
+                target.onmouseleave = function(){
+                    delete target.dataset.confirm;
+                    target.textContent = 'Delete';
+                    target.onmouseleave = null;
+                };
+            }
+
+            handled = true;
+            break;
+
+        // toggle rule enabled state from the title row button
+        case 'btn-editor-inject':
+            var currentRuleData = getEditorPanelData();
+
+            if (!currentRuleData.selector){
+                el.editorSelector.dataset.error = true;
+                handled = true;
+                break;
+            }
+
+            // send the current editor data to the background script for immediate injection
+            browser.runtime.sendMessage({
+                action: 'inject',
+                rule: currentRuleData
+            });
             handled = true;
             break;
 

@@ -288,6 +288,42 @@ var activeTabsData = {};
 /**
  * @param {array} _rules 
  */
+// Must mirror normalizeRuleForInjectionKey/getInjectionRuleId in browser-action.js
+// so auto-injected tags carry the same rule identifier the popup uses for manual
+// inject/reconciliation. Any change here must be made in both places.
+function normalizeRuleForInjectionKey(_rule){
+    var rule = _rule || {};
+    var code = rule.code || {};
+
+    return {
+        selector: String(rule.selector || '').trim(),
+        enabled: rule.enabled === true,
+        onLoad: rule.onLoad === true,
+        topFrameOnly: rule.topFrameOnly !== false,
+        code: {
+            js: String(code.js || ''),
+            css: String(code.css || ''),
+            html: String(code.html || ''),
+            files: (code.files || []).map(function(_file){
+                return {
+                    path: String((_file && _file.path) || ''),
+                    type: String((_file && _file.type) || ''),
+                    ext: String((_file && _file.ext) || '')
+                };
+            })
+        }
+    };
+}
+
+function getInjectionRuleId(_rule){
+    try{
+        return JSON.stringify(normalizeRuleForInjectionKey(_rule));
+    }
+    catch(_x){
+        return '';
+    }
+}
+
 function serializeRules(_rules){
 
     /*
@@ -318,7 +354,8 @@ function serializeRules(_rules){
         if (!this.enabled) return;
 
         var rule = this;
-        
+        var ruleId = getInjectionRuleId(rule);
+
         if (rule.code.files.length){
             each(rule.code.files, function(){
                 var file = this;
@@ -330,7 +367,8 @@ function serializeRules(_rules){
                     topFrameOnly: rule.topFrameOnly,
                     path: file.path,
                     local: file.type === 'local',
-                    onLoad: rule.onLoad
+                    onLoad: rule.onLoad,
+                    ruleId: ruleId
                 });
             });
         }
@@ -342,7 +380,8 @@ function serializeRules(_rules){
                 selector: rule.selector,
                 topFrameOnly: rule.topFrameOnly,
                 code: rule.code.css,
-                onLoad: rule.onLoad
+                onLoad: rule.onLoad,
+                ruleId: ruleId
             });
         }
 
@@ -353,7 +392,8 @@ function serializeRules(_rules){
                 selector: rule.selector,
                 topFrameOnly: rule.topFrameOnly,
                 code: rule.code.html,
-                onLoad: rule.onLoad
+                onLoad: rule.onLoad,
+                ruleId: ruleId
             });
         }
 
@@ -364,7 +404,8 @@ function serializeRules(_rules){
                 selector: rule.selector,
                 topFrameOnly: rule.topFrameOnly,
                 code: rule.code.js,
-                onLoad: rule.onLoad
+                onLoad: rule.onLoad,
+                ruleId: ruleId
             });
         }
 
@@ -378,7 +419,7 @@ function serializeRules(_rules){
  * 
  * @param {array} _injectionObject 
  */
-// Push rules to a tab's content script (used by popup "Inject" button only)
+// Push rules to a tab's content script
 async function injectRules(_injectionObject) {
     if (!_injectionObject.rules || 
         (_injectionObject.rules.onLoad.length === 0 && _injectionObject.rules.onCommit.length === 0)) {
@@ -455,26 +496,6 @@ function handleActivated(_info) {
  */
 function handleMessage(message, sender, sendResponse) {
     switch(message.action) {
-        case 'inject':
-            chrome.tabs.query({active: true, currentWindow: true}, async function(tabs) {
-                if (!tabs[0]) {
-                    sendResponse({success: false, error: "Failed to get the current active tab."});
-                    return;
-                }
-
-                let tab = { tabId: tabs[0].id, frameId: 0 };
-                let rules = serializeRules([message.rule]);
-                let injectionObject = splitRulesByInjectionType({rules: rules, info: tab});
-
-                try {
-                    await injectRules(injectionObject);
-                    chrome.runtime.sendMessage({action: message.action, success: true});
-                } catch (err) {
-                    chrome.runtime.sendMessage({action: message.action, success: false, error: err.message});
-                }
-            });
-            break;
-
         case 'get-current-tab-data':
             let activeTabData = activeTabsData[message.tabId];
             let sendData = function(_activeTabData) {
@@ -523,6 +544,10 @@ function setBadgeCounter(_tabData) {
 
     chrome.action.setBadgeBackgroundColor({ color: '#4688F1' });
     chrome.action.setBadgeText({ text: text });
+}
+
+function handleTabRemoved(_tabId){
+    delete activeTabsData[_tabId];
 }
 
 
@@ -749,20 +774,20 @@ function getInvolvedRules(_info, _rules){
                     readFile(rule.path, function(_res){
     
                         if (_res.success)
-                            result.push({ type: rule.type, onLoad: rule.onLoad , code: _res.response });
+                            result.push({ type: rule.type, onLoad: rule.onLoad , code: _res.response, ruleId: rule.ruleId });
                         else if (_res.message)
-                            result.push({ type: 'js', onLoad: rule.onLoad , code: 'console.error(\'Code-Injector [ERROR]:\', \''+_res.message.replace(/\\/g, '\\\\')+'\')' });
+                            result.push({ type: 'js', onLoad: rule.onLoad , code: 'console.error(\'Code-Injector [ERROR]:\', \''+_res.message.replace(/\\/g, '\\\\')+'\')', ruleId: rule.ruleId });
     
                         checkRule(_ind+1);
                     });
                 }
                 else{
-                    result.push({ type: rule.type, onLoad: rule.onLoad, path: rule.path});
+                    result.push({ type: rule.type, onLoad: rule.onLoad, path: rule.path, ruleId: rule.ruleId });
                     checkRule(_ind+1);
                 }
             }
             else{
-                result.push({ type: rule.type, onLoad: rule.onLoad, code: rule.code});
+                result.push({ type: rule.type, onLoad: rule.onLoad, code: rule.code, ruleId: rule.ruleId });
                 checkRule(_ind+1);
             }
         };
@@ -854,6 +879,7 @@ async function initialize() {
 
 chrome.storage.onChanged.addListener(handleStorageChanged);
 chrome.tabs.onActivated.addListener(handleActivated);
+chrome.tabs.onRemoved.addListener(handleTabRemoved);
 // CRITICAL FIX: Filter webNavigation to only HTTP/HTTPS URLs at the API level
 // This prevents the listener from firing on chrome://, about:, extension pages, etc.
 chrome.webNavigation.onCommitted.addListener(handleWebNavigationOnCommitted, {

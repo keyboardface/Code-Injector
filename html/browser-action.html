@@ -78,13 +78,15 @@
                                 <input type="text" data-name="txt-editor-title" class="inp" placeholder="Rule title (optional)">
                             </td>
                             <td>
-                                <button data-name="btn-editor-toggle-enabled" class="btn" tabindex="-1" title="Enable or disable this rule">Enabled</button>
+                                <div class="editor-action-buttons">
+                                    <button data-name="btn-editor-inject" class="btn btn-icon material-icons" tabindex="-1" title="Inject">&#xE3E7;</button>
+                                    <button data-name="btn-editor-toggle-enabled" class="btn" tabindex="-1" title="Enable or disable this rule">Enabled</button>
+                                </div>
                             </td>
                         </tr>
                         <tr>
                             <td>
                                 <input type="text" data-name="txt-editor-selector" class="inp" placeholder="URL pattern (regular expression)">
-                                <i class="e-s-help material-icons" tabindex="-1" title="The URL pattern specifies in what pages the rule should be applied.">&#xE8FD;</i>
                             </td>
                             <td>
                                 <button data-name="btn-editor-gethost" class="btn" tabindex="-1">Current host</button>
@@ -120,6 +122,7 @@
                     <label title="Set if this rule can be injected to iframes">
                         <input type="checkbox" data-name="cb-editor-topframeonly"  tabindex="-1">Top frame only
                     </label>
+                    <button data-name="btn-editor-delete" class="btn btn-editor-delete" tabindex="-1">Delete</button>
                     <button data-name="btn-editor-cancel" class="btn" tabindex="-1">Cancel</button>
                     <button data-name="btn-editor-save" class="btn btn-primary" tabindex="-1">Save</button>
                 </div>

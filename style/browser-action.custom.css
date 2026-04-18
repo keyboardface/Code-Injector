@@ -105,8 +105,26 @@
     width: 1%;
 }
 
-.editor-selector [data-name="btn-editor-toggle-enabled"] {
+.editor-selector .editor-action-buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     margin-left: 10px;
+}
+
+.editor-selector [data-name="btn-editor-inject"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 30px;
+}
+
+.editor-selector [data-name="btn-editor-toggle-enabled"] {
     min-width: 92px;
 }
 
@@ -122,4 +140,61 @@
 
 #editor .tab .tab-contents {
     height: 334px;
+}
+
+#editor .editor-controls [data-name="btn-editor-delete"] {
+    display: none;
+}
+
+#editor .editor-controls [data-name="btn-editor-delete"][data-visible="true"] {
+    display: inline-block;
+}
+
+#editor .editor-controls [data-name="btn-editor-delete"][data-confirm="true"] {
+    background: #db4437;
+    color: #fff;
+    text-shadow: 0 1px rgba(0, 0, 0, .2);
+}
+
+.editor-selector [data-name="btn-editor-inject"][data-mode="inject"] {
+    background: #4688f1;
+    color: #fff;
+}
+
+.editor-selector [data-name="btn-editor-inject"][data-mode="remove"] {
+    background: #db4437;
+    color: #fff;
+}
+
+#rules .ctx-menu [data-name="btn-rule-inject"][data-mode="inject"] i {
+    color: #4688f1;
+}
+
+#rules .ctx-menu [data-name="btn-rule-inject"][data-mode="remove"] i {
+    color: #db4437;
+}
+
+@keyframes ci-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.editor-selector [data-name="btn-editor-inject"][data-mode="loading"] {
+    background: #9e9e9e;
+    color: #fff;
+    pointer-events: none;
+}
+
+.editor-selector [data-name="btn-editor-inject"][data-mode="loading"] {
+    animation: ci-spin 0.9s linear infinite;
+}
+
+#rules .ctx-menu [data-name="btn-rule-inject"][data-mode="loading"] i {
+    color: #9e9e9e;
+    animation: ci-spin 0.9s linear infinite;
+    display: inline-block;
+}
+
+#rules .ctx-menu [data-name="btn-rule-inject"][data-mode="loading"] {
+    pointer-events: none;
 }

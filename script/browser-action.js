@@ -327,6 +327,9 @@ var popupSettings = {
     ruleIndexPrimaryLabel: 'domain'
 };
 
+// manual-injection state keyed by deterministic rule key
+var injectedIds = new Set();
+
 /**
  * normalize and return the configured rule index primary label
  *
@@ -352,6 +355,242 @@ function getRuleDisplayLabel(_selector, _title){
     return popupSettings.ruleIndexPrimaryLabel === 'title'
         ? title +' - '+ selector
         : selector +' - '+ title;
+}
+
+function normalizeRuleForInjectionKey(_rule){
+    var rule = _rule || {};
+    var code = rule.code || {};
+
+    return {
+        selector: String(rule.selector || '').trim(),
+        enabled: rule.enabled === true,
+        onLoad: rule.onLoad === true,
+        topFrameOnly: rule.topFrameOnly !== false,
+        code: {
+            js: String(code.js || ''),
+            css: String(code.css || ''),
+            html: String(code.html || ''),
+            files: (code.files || []).map(function(_file){
+                return {
+                    path: String((_file && _file.path) || ''),
+                    type: String((_file && _file.type) || ''),
+                    ext: String((_file && _file.ext) || '')
+                };
+            })
+        }
+    };
+}
+
+function getInjectionRuleId(_rule){
+    try{
+        return JSON.stringify(normalizeRuleForInjectionKey(_rule));
+    }
+    catch(_x){
+        return '';
+    }
+}
+
+function setEditorInjectButtonState(_state){
+    if (!el.editorInjectBtn) return;
+
+    if (_state === 'loading'){
+        el.editorInjectBtn.dataset.mode = 'loading';
+        el.editorInjectBtn.textContent = '\uE627';
+        el.editorInjectBtn.title = 'Working...';
+        return;
+    }
+
+    var isInjected = _state === true;
+    el.editorInjectBtn.dataset.mode = isInjected ? 'remove' : 'inject';
+    el.editorInjectBtn.textContent = isInjected ? '\uE5CD' : '\uE3E7';
+    el.editorInjectBtn.title = isInjected
+        ? 'Remove injected nodes from this tab'
+        : 'Inject';
+}
+
+function setRuleContextInjectState(_state){
+    if (!el.rulesCtxMenu) return;
+
+    var ctxInjectBtn = el.rulesCtxMenu.querySelector('[data-name="btn-rule-inject"]');
+    if (!ctxInjectBtn) return;
+
+    if (_state === 'loading'){
+        ctxInjectBtn.dataset.mode = 'loading';
+        ctxInjectBtn.innerHTML = '<i class="material-icons">\uE627</i> Working...';
+        return;
+    }
+
+    var isInjected = _state === true;
+    ctxInjectBtn.dataset.mode = isInjected ? 'remove' : 'inject';
+    ctxInjectBtn.innerHTML = '<i class="material-icons">'+ (isInjected ? '\uE5CD' : '\uE3E7') +'</i> '+ (isInjected ? 'Remove' : 'Inject');
+}
+
+function refreshEditorInjectButtonState(){
+    if (!el.editor || !el.editorInjectBtn || !el.body || !el.body.dataset.editing) return;
+
+    var ruleData = getEditorPanelData();
+    var ruleKey = getInjectionRuleId(ruleData);
+    var isInjected = !!(ruleKey && injectedIds.has(ruleKey));
+    setEditorInjectButtonState(isInjected);
+}
+
+function serializeRuleForManual(_rule){
+    var rule = _rule || {};
+    var code = rule.code || {};
+    var files = Array.isArray(code.files) ? code.files : [];
+    var result = [];
+
+    each(files, function(){
+        if (!this || !this.ext || !this.path) return;
+        if (this.type === 'local') return;
+
+        result.push({
+            type: this.ext,
+            selector: String(rule.selector || ''),
+            topFrameOnly: rule.topFrameOnly === true,
+            path: this.path,
+            onLoad: rule.onLoad === true
+        });
+    });
+
+    if (containsCode(code.css)){
+        result.push({
+            type: 'css',
+            selector: String(rule.selector || ''),
+            topFrameOnly: rule.topFrameOnly === true,
+            code: String(code.css || ''),
+            onLoad: rule.onLoad === true
+        });
+    }
+
+    if (containsCode(code.html)){
+        result.push({
+            type: 'html',
+            selector: String(rule.selector || ''),
+            topFrameOnly: rule.topFrameOnly === true,
+            code: String(code.html || ''),
+            onLoad: rule.onLoad === true
+        });
+    }
+
+    if (containsCode(code.js)){
+        result.push({
+            type: 'js',
+            selector: String(rule.selector || ''),
+            topFrameOnly: rule.topFrameOnly === true,
+            code: String(code.js || ''),
+            onLoad: rule.onLoad === true
+        });
+    }
+
+    return result;
+}
+
+function splitManualRulesByInjectionType(_rules){
+    var result = { onCommit: [], onLoad: [] };
+    each(_rules, function(){
+        result[this.onLoad ? 'onLoad':'onCommit'].push(this);
+    });
+    return result;
+}
+
+async function getActiveTabForManualInject(){
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs && tabs[0] ? tabs[0] : null;
+}
+
+async function sendInjectDirect(_ruleId, _ruleData){
+    var tab = await getActiveTabForManualInject();
+    if (!tab) return { success: false, error: 'No active tab' };
+
+    var serialized = serializeRuleForManual(_ruleData);
+    var splittedRules = splitManualRulesByInjectionType(serialized);
+    if (!splittedRules.onCommit.length && !splittedRules.onLoad.length){
+        return { success: false, error: 'Nothing to inject. Add JS, CSS, HTML, or valid remote file entries first.' };
+    }
+
+    try{
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id, frameIds: [0] },
+            files: ['script/inject.js']
+        });
+        await chrome.tabs.sendMessage(tab.id, {
+            __ci: 'inject',
+            ruleId: _ruleId,
+            rules: splittedRules
+        }, {
+            frameId: 0
+        });
+        return { success: true };
+    }
+    catch(ex){
+        return { success: false, error: ex && ex.message ? ex.message : 'Failed to inject.' };
+    }
+}
+
+async function sendRevertDirect(_ruleId){
+    var tab = await getActiveTabForManualInject();
+    if (!tab) return { success: true };
+
+    try{
+        await chrome.tabs.sendMessage(tab.id, {
+            __ci: 'revert',
+            ruleId: _ruleId
+        }, {
+            frameId: 0
+        });
+    }
+    catch(_x){
+        // If the tab navigated, there is nothing left to revert.
+    }
+
+    return { success: true };
+}
+
+async function sendListDirect(){
+    var tab = await getActiveTabForManualInject();
+    if (!tab) return [];
+
+    // Inject the content script first so it can observe existing
+    // data-code-injector tags even when nothing was manually injected on this
+    // session (e.g. auto-inject fired before the popup opened, then was
+    // dismissed). On restricted pages (chrome://, web store) this will throw
+    // and we simply return an empty list.
+    try{
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id, frameIds: [0] },
+            files: ['script/inject.js']
+        });
+    }
+    catch(_x){
+        return [];
+    }
+
+    try{
+        var response = await chrome.tabs.sendMessage(tab.id, { __ci: 'list' }, { frameId: 0 });
+        return response && Array.isArray(response.ruleIds) ? response.ruleIds : [];
+    }
+    catch(_x){
+        return [];
+    }
+}
+
+function refreshAllInjectButtonStates(){
+    refreshEditorInjectButtonState();
+
+    if (el.rulesCtxMenu && el.rulesCtxMenu.dataset.hidden === 'false' && el.rulesCtxMenu.dataset.id){
+        var openRuleEl = document.querySelector('.rule[data-id="'+el.rulesCtxMenu.dataset.id+'"]');
+        if (openRuleEl){
+            var openRuleKey = getInjectionRuleId(getRuleData(openRuleEl));
+            setRuleContextInjectState(!!(openRuleKey && injectedIds.has(openRuleKey)));
+        }
+    }
+}
+
+async function reconcileInjectedState(){
+    var ids = await sendListDirect();
+    injectedIds = new Set(ids);
+    refreshAllInjectButtonStates();
 }
 
 /**
@@ -456,8 +695,10 @@ function initialize(){
             rulesCtxMenu:   document.querySelector('#rules .ctx-menu'),
             editor:         document.querySelector('#editor'),
             editorTitle:    document.querySelector('#editor .editor-selector [data-name="txt-editor-title"]'),
+            editorInjectBtn: document.querySelector('#editor .editor-selector [data-name="btn-editor-inject"]'),
             editorToggleEnabledBtn: document.querySelector('#editor .editor-selector [data-name="btn-editor-toggle-enabled"]'),
             editorSelector: document.querySelector('#editor .editor-selector [data-name="txt-editor-selector"]'),
+            editorDeleteBtn: document.querySelector('#editor [data-name="btn-editor-delete"]'),
             editorCancelBtn: document.querySelector('#editor [data-name="btn-editor-cancel"]'),
             editorSaveBtn:  document.querySelector('#editor [data-name="btn-editor-save"]'),
             tab:            document.querySelector('#editor .tab'),
@@ -473,13 +714,16 @@ function initialize(){
         if (el.filterRulesByMatchingDomain)
             el.filterRulesByMatchingDomain.checked = popupSettings.filterRulesByMatchingDomain;
 
+        setEditorInjectButtonState(false);
+
         // listen for background.js messages
         chrome.runtime.onMessage.addListener(handleOnMessage);
 
         // request the active tab info
         chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => {
             chrome.runtime.sendMessage({ action: 'get-current-tab-data', tabId: tabs[0].id });
-          });
+        });
+        reconcileInjectedState();
 
         // request monaco editor
         requireMonaco().then(function(){
@@ -591,6 +835,7 @@ function setLastSession(){
 
     // check for code changes to set the languages dots
     checkEditorDots();
+    refreshEditorInjectButtonState();
 
     // stop the previous timeout if not fired yet
     clearTimeout(unsavedChangesTimeout);
@@ -724,6 +969,22 @@ function refreshEditorEnabledToggle(){
 }
 
 /**
+ * sync delete button visibility/confirm state in editor footer
+ */
+function refreshEditorDeleteButton(){
+    if (!el.editorDeleteBtn || !el.editor) return;
+
+    var canDelete = el.editor.dataset.target && el.editor.dataset.target !== 'NEW';
+    el.editorDeleteBtn.dataset.visible = canDelete;
+
+    delete el.editorDeleteBtn.dataset.confirm;
+    el.editorDeleteBtn.textContent = 'Delete';
+    el.editorDeleteBtn.title = canDelete
+        ? 'Delete this rule'
+        : 'Delete is available after saving';
+}
+
+/**
  * set a rule's data to the editor panel 
  * 
  * @param {Object} _data 
@@ -801,6 +1062,8 @@ function setEditorPanelData(_data){
     el.editor.querySelector('[data-name="cb-editor-onload"]').checked = data.onLoad;
     el.editor.querySelector('[data-name="cb-editor-topframeonly"]').checked = data.topFrameOnly;
     refreshEditorEnabledToggle();
+    refreshEditorDeleteButton();
+    refreshEditorInjectButtonState();
 
     // set the focus on the URL pattern input
     // (after a timeout to avoid a performance rendering bug)
@@ -960,6 +1223,10 @@ function showRuleContextMenu(_config){
     // reference the rule id
     el.rulesCtxMenu.dataset.id = _config.el.dataset.id;
 
+    var selectedRuleData = getRuleData(_config.el);
+    var selectedRuleKey = getInjectionRuleId(selectedRuleData);
+    setRuleContextInjectState(!!(selectedRuleKey && injectedIds.has(selectedRuleKey)));
+
     // show the context menu
     el.rulesCtxMenu.dataset.hidden = false;
 }
@@ -1007,23 +1274,6 @@ function handleOnMessage(_mex, _sender, _callback){
 
     // split by action 
     switch(_mex.action){
-
-        case 'inject': 
-
-            var elOptInject = el.rulesCtxMenu.querySelector('[data-name="btn-rule-inject"]');
-                elOptInject.onmouseleave = function(){
-                    delete elOptInject.dataset.action;
-                };
-
-            if (_mex.success){
-                elOptInject.dataset.action = "success";
-            }
-            else{
-                elOptInject.dataset.action = "fail";
-            }
-
-            break;
-
         case 'get-current-tab-data': 
             currentTabData = _mex.data || { topURL: '', innerURLs: [] };
             loadRules();
@@ -1416,11 +1666,25 @@ window.addEventListener('click', function(_e){
 
             // get the rule data
             var ruleData = getRuleData(elRule);
+            var ruleKey = getInjectionRuleId(ruleData);
+            var wasInjected = injectedIds.has(ruleKey);
+            var ctxInjectBtn = el.rulesCtxMenu.querySelector('[data-name="btn-rule-inject"]');
 
-            // send the rule data to the background script which will handle the injection
-            chrome.runtime.sendMessage({
-                action: 'inject',
-                rule: ruleData
+            setRuleContextInjectState('loading');
+            if (el.editorInjectBtn) setEditorInjectButtonState('loading');
+
+            (wasInjected ? sendRevertDirect(ruleKey) : sendInjectDirect(ruleKey, ruleData))
+            .then(function(_result){
+                if (ctxInjectBtn){
+                    ctxInjectBtn.onmouseleave = function(){
+                        delete ctxInjectBtn.dataset.action;
+                    };
+                    ctxInjectBtn.dataset.action = _result && _result.success ? 'success' : 'fail';
+                }
+
+                // Re-derive state from the DOM so the UI matches reality even
+                // if the tab reloaded mid-request or partial injection failed.
+                return reconcileInjectedState();
             });
             handled = true;
             break;
@@ -1435,6 +1699,62 @@ window.addEventListener('click', function(_e){
         case 'btn-editor-cancel': 
             delete el.body.dataset.editing;
             chrome.storage.local.remove('lastSession');
+            handled = true;
+            break;
+
+        // delete the rule currently opened in the editor
+        case 'btn-editor-delete':
+            if (el.editor.dataset.target === 'NEW'){
+                handled = true;
+                break;
+            }
+
+            if (target.dataset.confirm){
+                var linkedRule = el.rulesList.querySelector('.rule[data-id="'+el.editor.dataset.target+'"]');
+                if (linkedRule){
+                    linkedRule.dataset.removing = true;
+                    setTimeout(function(){
+                        linkedRule.remove();
+                        saveRules();
+                        applyRulesMatchingDomainFilter();
+                    }, 200);
+                }
+
+                delete el.body.dataset.editing;
+                chrome.storage.local.remove('lastSession');
+            }
+            else{
+                target.dataset.confirm = true;
+                target.textContent = 'Confirm?';
+                target.onmouseleave = function(){
+                    delete target.dataset.confirm;
+                    target.textContent = 'Delete';
+                    target.onmouseleave = null;
+                };
+            }
+
+            handled = true;
+            break;
+
+        // toggle rule enabled state from the title row button
+        case 'btn-editor-inject':
+            var currentRuleData = getEditorPanelData();
+
+            if (!currentRuleData.selector){
+                el.editorSelector.dataset.error = true;
+                handled = true;
+                break;
+            }
+
+            var editorRuleKey = getInjectionRuleId(currentRuleData);
+            var editorWasInjected = injectedIds.has(editorRuleKey);
+
+            setEditorInjectButtonState('loading');
+
+            (editorWasInjected ? sendRevertDirect(editorRuleKey) : sendInjectDirect(editorRuleKey, currentRuleData))
+            .then(function(){
+                return reconcileInjectedState();
+            });
             handled = true;
             break;
 

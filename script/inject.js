@@ -1,177 +1,219 @@
-(function(window){ 
-    if (window.__codeInjectorLoaded) {
-        return;
-    }
+(function(window){
+    if (window.__codeInjectorLoaded) return;
     window.__codeInjectorLoaded = true;
-    
-    // append a property to the given url trying to force the browser 
-    // to do not load a previous cached version of the file
+
+    var INJECTOR_ATTR = 'data-code-injector';
+    var RULE_ID_ATTR = 'data-code-injector-rule-id';
+    var AUTO_ID_ATTR = 'data-code-injector-auto';
+
     function appendCache(_path){
-        return _path + (_path.indexOf('?') !== -1 ? '&':'?') + 'cache=' + Date.now();
-    }
-
-    // inject a JavaScript block of code or request an external JavaScript file
-    function injectJS(_rule, _cb){
-
-        // it's a remote file if ".path" is defined 
-        if (_rule.path){
-    
-            var el = document.createElement('script');
-    
-            el.setAttribute('type', 'text/javascript');
-            el.onload = _cb;
-            el.onerror = function(){
-                console.error("Code-Injector [JS] - Error loading: " + _rule.path);
-                _cb();
-            };
-    
-            el.src = appendCache(_rule.path);
-            
-            document.documentElement.appendChild(el);
-        }
-        else{
-    
-            var el = document.createElement('script');
-                el.textContent = _rule.code;
-    
-            document.documentElement.appendChild(el);
-            
-            _cb();
-        }
-    }
-
-    // inject a CSS block of code or request an external CSS file
-    function injectCSS(_rule, _cb){
-
-        // it's a remote file if ".path" is defined 
-        if (_rule.path){
-
-            var el = document.createElement('link');
-
-            el.setAttribute('type', 'text/css');
-            el.setAttribute('rel', 'stylesheet');
-            el.onload = _cb;
-            el.onerror = function(){
-                console.error("Code-Injector [CSS] - Error loading: " + _rule.path);
-                _cb();
-            };
-
-            el.href = appendCache(_rule.path);
-            
-            document.documentElement.appendChild(el);
-        }
-        else{
-
-            var el = document.createElement('style');
-                el.textContent = _rule.code;
-
-            document.documentElement.appendChild(el);
-
-            _cb();
-        }
-    }
-
-    // inject an HTML block of code 
-    async function injectHTML(_rule, _cb){
-
-        // it's a remote file if ".path" is defined 
-        // !! cannot request remote HTML files
-        if (_rule.path) {
-            console.error("Code-Injector [HTML] - Cannot request remote HTML files.");
-            _cb();
-        }
-        else{
-            // Ensure document.body exists before injecting HTML
-            if (!document.body) {
-                await new Promise((resolve) => {
-                    if (document.body) {
-                        resolve();
-                    } else {
-                        const observer = new MutationObserver(() => {
-                            if (document.body) {
-                                observer.disconnect();
-                                resolve();
-                            }
-                        });
-                        observer.observe(document.documentElement, { childList: true });
-                    }
-                });
-            }
-
-            var parser = new DOMParser();
-            var doc = parser.parseFromString(_rule.code, "text/html");
-
-            while(doc.body.firstChild){
-                document.body.appendChild(doc.body.firstChild);
-            }
-
-            _cb();
-        }
-    }
-
-    // Main loop to inject the selected rules by type
-    function insertRules(_rules) {
-        var rule = _rules.shift();
-        if (rule === undefined) {
-            return;
-        }
-    
-        switch(rule.type) {
-            case 'js': 
-                injectJS(rule, insertRules.bind(null, _rules));
-                break;
-    
-            case 'css': 
-                injectCSS(rule, insertRules.bind(null, _rules));
-                break;
-    
-            case 'html': 
-                injectHTML(rule, insertRules.bind(null, _rules));
-                break;
-        }
+        return _path + (_path.indexOf('?') !== -1 ? '&' : '?') + 'cache=' + Date.now();
     }
 
     function ensureDocumentReady() {
-        return new Promise((resolve) => {
-            // Resolve immediately if document is already interactive or complete
+        return new Promise(function(resolve){
             if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 resolve();
             } else {
-                // Use DOMContentLoaded for faster response (fires before 'load')
                 window.addEventListener('DOMContentLoaded', resolve, { once: true });
             }
         });
     }
 
-    async function handleOnMessage(_data, _sender, _callback) {
-        try {
-            // Inject onCommit rules IMMEDIATELY (don't wait for document ready)
-            if (_data.onCommit && _data.onCommit.length) {
-                insertRules([..._data.onCommit]); // Create a copy to prevent mutation
-            }
-    
-            // Wait for document ready before injecting onLoad rules
-            if (_data.onLoad && _data.onLoad.length) {
-                await ensureDocumentReady();
-                insertRules([..._data.onLoad]); // Create a copy to prevent mutation
-            }
-    
-            if (typeof _callback === 'function') {
-                return _callback(true);
-            }
-            return true;
-        } catch (error) {
-            console.error('[Code-Injector] Content script error:', error);
-            return false;
+    function tagElement(_element, _ruleId, _fromAuto){
+        if (!_element || _element.nodeType !== 1) return;
+        try{
+            _element.setAttribute(INJECTOR_ATTR, '');
+            if (_ruleId) _element.setAttribute(RULE_ID_ATTR, _ruleId);
+            if (_fromAuto) _element.setAttribute(AUTO_ID_ATTR, '');
+        }
+        catch(_x){
+            // Some nodes (like text nodes slipped in) may not accept attributes.
         }
     }
 
-    // messaging handler for push-based injection (popup "Inject" button)
-    try{
-        chrome.runtime.onMessage.addListener(handleOnMessage);
-    }
-    catch(_x){
-        // Silently fail - this can happen in restricted contexts
+    function removeTaggedElementsForRuleId(_ruleId){
+        if (!_ruleId) return 0;
+        var selector = '[' + RULE_ID_ATTR + '="' + cssEscape(_ruleId) + '"]';
+        var nodes = document.querySelectorAll(selector);
+        for (var ind = 0; ind < nodes.length; ind++){
+            var node = nodes[ind];
+            if (node && node.parentNode){
+                node.parentNode.removeChild(node);
+            }
+        }
+        return nodes.length;
     }
 
+    function listInjectedRuleIds(){
+        var selector = '[' + RULE_ID_ATTR + ']';
+        var nodes = document.querySelectorAll(selector);
+        var ids = {};
+        for (var ind = 0; ind < nodes.length; ind++){
+            var id = nodes[ind].getAttribute(RULE_ID_ATTR);
+            if (id) ids[id] = true;
+        }
+        return Object.keys(ids);
+    }
+
+    function cssEscape(_value){
+        if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(_value);
+        return String(_value).replace(/["\\]/g, '\\$&');
+    }
+
+    function injectJS(_rule, _ruleId, _fromAuto){
+        return new Promise(function(resolve){
+            var el = document.createElement('script');
+            el.setAttribute('type', 'text/javascript');
+            tagElement(el, _ruleId, _fromAuto);
+
+            if (_rule.path){
+                el.onload = resolve;
+                el.onerror = function(){
+                    console.error("Code-Injector [JS] - Error loading: " + _rule.path);
+                    resolve();
+                };
+                el.src = appendCache(_rule.path);
+                document.documentElement.appendChild(el);
+            } else {
+                el.textContent = _rule.code || '';
+                document.documentElement.appendChild(el);
+                resolve();
+            }
+        });
+    }
+
+    function injectCSS(_rule, _ruleId, _fromAuto){
+        return new Promise(function(resolve){
+            var el;
+            if (_rule.path){
+                el = document.createElement('link');
+                el.setAttribute('type', 'text/css');
+                el.setAttribute('rel', 'stylesheet');
+                tagElement(el, _ruleId, _fromAuto);
+                el.onload = resolve;
+                el.onerror = function(){
+                    console.error("Code-Injector [CSS] - Error loading: " + _rule.path);
+                    resolve();
+                };
+                el.href = appendCache(_rule.path);
+                document.documentElement.appendChild(el);
+            } else {
+                el = document.createElement('style');
+                tagElement(el, _ruleId, _fromAuto);
+                el.textContent = _rule.code || '';
+                document.documentElement.appendChild(el);
+                resolve();
+            }
+        });
+    }
+
+    function injectHTML(_rule, _ruleId, _fromAuto){
+        return ensureDocumentReady().then(function(){
+            if (_rule.path){
+                console.error("Code-Injector [HTML] - Cannot request remote HTML files.");
+                return;
+            }
+
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(_rule.code || '', 'text/html');
+            var target = document.body || document.documentElement;
+            while (doc.body.firstChild){
+                var node = doc.body.firstChild;
+                target.appendChild(node);
+                if (node.nodeType === 1){
+                    tagElement(node, _ruleId, _fromAuto);
+                }
+            }
+        });
+    }
+
+    function injectRule(_rule, _ruleId, _fromAuto){
+        switch(_rule.type){
+            case 'js':   return injectJS(_rule, _ruleId, _fromAuto);
+            case 'css':  return injectCSS(_rule, _ruleId, _fromAuto);
+            case 'html': return injectHTML(_rule, _ruleId, _fromAuto);
+            default:     return Promise.resolve();
+        }
+    }
+
+    function runRulesBatch(_rules, _ruleId, _fromAuto){
+        return (_rules || []).reduce(function(_prev, _rule){
+            return _prev.then(function(){
+                // Per-item ruleId overrides the batch default. Auto-inject passes
+                // the hash per emitted entry so multiple rules stay distinguishable.
+                var effectiveRuleId = (_rule && _rule.ruleId) ? _rule.ruleId : _ruleId;
+                return injectRule(_rule, effectiveRuleId, _fromAuto);
+            });
+        }, Promise.resolve());
+    }
+
+    function injectManualRules(_ruleId, _payload){
+        if (!_ruleId) return Promise.resolve();
+        removeTaggedElementsForRuleId(_ruleId);
+
+        var onCommit = _payload && Array.isArray(_payload.onCommit) ? _payload.onCommit : [];
+        var onLoad = _payload && Array.isArray(_payload.onLoad) ? _payload.onLoad : [];
+
+        return runRulesBatch(onCommit, _ruleId, false).then(function(){
+            if (!onLoad.length) return;
+            return ensureDocumentReady().then(function(){
+                return runRulesBatch(onLoad, _ruleId, false);
+            });
+        });
+    }
+
+    function injectLegacyRules(_payload){
+        var onCommit = _payload && Array.isArray(_payload.onCommit) ? _payload.onCommit : [];
+        var onLoad = _payload && Array.isArray(_payload.onLoad) ? _payload.onLoad : [];
+        var ruleId = _payload && _payload.ruleId ? _payload.ruleId : '';
+
+        return runRulesBatch(onCommit, ruleId, true).then(function(){
+            if (!onLoad.length) return;
+            return ensureDocumentReady().then(function(){
+                return runRulesBatch(onLoad, ruleId, true);
+            });
+        });
+    }
+
+    try{
+        chrome.runtime.onMessage.addListener(function(_message, _sender, _sendResponse){
+            (async function(){
+                try{
+                    if (_message && _message.__ci === 'inject'){
+                        await injectManualRules(_message.ruleId, _message.rules || { onCommit: [], onLoad: [] });
+                        _sendResponse({ ok: true });
+                        return;
+                    }
+
+                    if (_message && _message.__ci === 'revert'){
+                        var removed = removeTaggedElementsForRuleId(_message.ruleId);
+                        _sendResponse({ ok: true, removed: removed });
+                        return;
+                    }
+
+                    if (_message && _message.__ci === 'list'){
+                        _sendResponse({ ok: true, ruleIds: listInjectedRuleIds() });
+                        return;
+                    }
+
+                    if (_message && (_message.onCommit || _message.onLoad)) {
+                        await injectLegacyRules(_message);
+                        _sendResponse({ ok: true });
+                        return;
+                    }
+
+                    _sendResponse({ ok: false, error: 'unknown message' });
+                }
+                catch(_error){
+                    _sendResponse({ ok: false, error: _error && _error.message ? _error.message : 'unknown error' });
+                }
+            }());
+
+            return true;
+        });
+    }
+    catch(_x){
+        // Silently fail in restricted contexts.
+    }
 }(window));
